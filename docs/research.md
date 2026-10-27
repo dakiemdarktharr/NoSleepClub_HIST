@@ -19,10 +19,10 @@ Tên là nhãn do Dev cung cấp, không phải dữ kiện thị giác mà mode
 Thiết kế được chọn:
 
 1. Quay một khu vực mỗi footage. Sau khi dừng mới yêu cầu nhãn, loại tham chiếu / kiểm thử và cờ cảnh khác.
-2. Loại frame thiếu sáng / quá sáng / mờ / thiếu chi tiết trước khi trích embedding; giảm mẫu gần trùng. Bộ lọc không thể bảo đảm loại mọi ảnh motion blur; cần kiểm tra bằng thiết bị thật.
-3. So toàn cảnh để chọn ứng viên, có ngưỡng tuyệt đối và khoảng cách với nhãn cạnh tranh / cảnh khác.
-4. Xác minh ít nhất hai frame tham chiếu bằng local features và RANSAC; yêu cầu đủ inlier, tỷ lệ inlier và diện tích phủ.
-5. Ba lượt liên tiếp cùng nhãn mới hiện tên. Bằng chứng mới không đạt thì trả `...`; không giữ tên cũ vô hạn.
+2. Quay 5 giây, giữ các frame rõ độc lập với thời gian suy luận. Chọn tối đa 8 frame rõ theo các khoảng thời gian rồi xử lý sau khi dừng; cảnh đứng yên vẫn hợp lệ. Bộ lọc không thể bảo đảm loại mọi ảnh motion blur; cần kiểm tra bằng thiết bị thật.
+3. Fit bộ phân loại few-shot nhiều prototype từ đặc trưng DINOv2, lưu artifact trên MongoDB và cache thiết bị. So với các prototype / mẫu hỗ trợ bằng ngưỡng tuyệt đối và khoảng cách với nhãn cạnh tranh / cảnh khác.
+4. Khớp rất mạnh có thể hiện tên từ frame đầu. Khớp yếu hơn cần một ảnh tham chiếu xác minh bằng ORB và RANSAC, với đủ inlier, tỷ lệ inlier và diện tích phủ. Không bắt hai ảnh tham chiếu cùng thấy một góc.
+5. Bằng chứng vừa phải cần hai lượt xác nhận; bằng chứng mạnh có thể hiện ngay. Bằng chứng mới không đạt thì trả `...`; không giữ tên cũ vô hạn. Chi tiết bản sửa và giới hạn đo trong [audit-five-second.md](audit-five-second.md).
 6. Đo trên footage kiểm thử chụp ở lượt khác, bao gồm cảnh lạ. Ngưỡng ban đầu không được coi là đã calibration cho mọi căn phòng.
 
 ## Hạ tầng web / điện thoại

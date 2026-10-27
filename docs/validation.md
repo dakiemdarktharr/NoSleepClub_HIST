@@ -2,7 +2,7 @@
 
 ## Thu mẫu
 
-- Hai nơi có tên rõ ràng. Mỗi nơi quay 2–3 footage tham chiếu ngắn, từ các vị trí đứng hơi khác nhau. Không quay nhanh hoặc đổi giữa hai nơi trong cùng một footage.
+- Hai nơi có tên rõ ràng. Bắt đầu bằng **một footage 5 giây cho mỗi nơi**, rồi đặt tên và bấm “Lưu & huấn luyện”. Giữ máy ổn định, di chuyển góc nhẹ; không đổi giữa hai nơi trong cùng một footage. Chỉ bổ sung góc nhìn nếu kiểm thử thực tế còn thiếu độ phủ.
 - Thêm footage cảnh khác: tường, cửa, sàn và góc không đăng ký. Đặt cờ cảnh khác.
 - Thu các footage **Kiểm thử riêng** ở lượt khác, tốt nhất khác thời điểm / ánh sáng. Không dùng lại frame tham chiếu làm query đánh giá.
 

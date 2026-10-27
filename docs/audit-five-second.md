@@ -31,4 +31,10 @@ Ngày 28/10/2026. Thay thế các cổng nhận diện v1 trong audit cũ.
 
 Một clip 5 giây tạo được bộ mẫu của khu vực, không chứng minh rằng mọi góc nhìn / ánh sáng chưa quay sẽ được nhận đúng. Khớp quá giống giữa các nơi vẫn có thể gây mơ hồ. Cold start tải backbone trên thiết bị mới không thể có độ trễ bằng không. Chưa đo bằng camera phần cứng của người dùng; cần thử tại phòng thật sau khi cập nhật.
 
-Kiểm tra production và commit được xác nhận qua CI / deployment trước bàn giao; phần này ghi các phép thử phần mềm, không phải chứng nhận kiểm toán độc lập.
+## Xác nhận production
+
+Commit ứng dụng `a4e33e9` đã qua GitHub CI (typecheck, 15 tests, build, dependency audit) và Vercel deployment `dpl_2CALeRAxgM8je6inCCuCZ9sVZDrE` ở trạng thái READY. URL public tiếp tục là https://nosleepclub-hist-connected.vercel.app/.
+
+Trên production, camera giả lập ở viewport 390×844 quay một video tĩnh: mở hộp đặt tên sau 5.477 ms, giữ 26 frame rõ, chọn 8 frame để học. Lưu video, trích đặc trưng, fit và lưu classifier mất 7.543 ms trên máy thử. User cùng phiên hiện tên sau 1.341 ms từ lúc bật camera. Phiên mới chỉ có read key qua link QR hiện tên sau 1.335 ms khi model đã sẵn sàng; bước suy luận báo 960 ms. Phiên mới chỉ gọi `workspace.get` và `model.get`, không tải toàn gallery qua `frames.get` hoặc train lại.
+
+Cảnh kệ chưa học được từ chối bằng `...`. Viewport mobile không tràn ngang. Không thấy lỗi console trong phép thử hoặc runtime error/fatal trong cửa sổ log đã kiểm tra. Fixture production và fixture localhost đều đã xóa; video thật của người dùng được giữ nguyên. Đây là phép thử phần mềm bằng camera giả lập, không phải kết quả camera điện thoại thật hay chứng nhận kiểm toán độc lập.
