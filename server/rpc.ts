@@ -2,9 +2,9 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Db, Document } from 'mongodb';
 import { z } from 'zod';
-import { CHUNK_SIZE } from '../src/shared';
-import { database } from './db';
-import { createFootageSchema, framesSchema, idSchema, keySchema } from './validation';
+import { CHUNK_SIZE } from '../src/shared.js';
+import { database } from './db.js';
+import { createFootageSchema, framesSchema, idSchema, keySchema } from './validation.js';
 
 type Request = IncomingMessage & { body?: unknown };
 class HttpError extends Error { constructor(public code: number, message: string) { super(message); } }

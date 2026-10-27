@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MODEL, MAX_FRAMES, MAX_VIDEO_BYTES } from '../src/shared';
+import { MODEL, MAX_FRAMES, MAX_VIDEO_BYTES } from '../src/shared.js';
 export const idSchema = z.uuid();
 export const keySchema = z.string().regex(/^[a-f0-9]{64}$/);
 export const featureSchema = z.object({

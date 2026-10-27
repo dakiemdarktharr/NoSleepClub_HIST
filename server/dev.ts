@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
-import rpc from './rpc';
-import health from '../api/health';
+import rpc from './rpc.js';
+import health from '../api/health.js';
 createServer((req, res) => {
   // Vite's local proxy changes Host; allow only the two local development origins.
   // This adapter is never used by Vercel Functions, which keep strict same-origin checks.

@@ -35,3 +35,4 @@ Ngày kiểm tra: 28/10/2026. Báo cáo được cập nhật sau kiểm tra tr�
 - Phiên trình duyệt mới với QR phòng: tải đúng hai footage, không có khóa ghi; fragment được xóa sau khi đọc. Màn hình 390px không tràn ngang; QR hiển thị được.
 - Đã xóa footage nhân tạo sau các kiểm tra.
 - Node test đã nâng riêng trong `.tools` lên 24.22.1 và kiểm tra SHA-256 theo file chính thức; không thay Node toàn máy.
+- Kiểm tra production phát hiện module API cần đuôi `.js` khi chạy Node ESM. Đã sửa import, biên dịch riêng bằng NodeNext và chạy module health đã biên dịch: HTTP 200, MongoDB connected. CI được chạy lại trên bản sửa.
