@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { createFootageSchema, featureSchema, idSchema, keySchema } from '../server/validation';
-import { MODEL } from '../src/shared';
+import { createFootageSchema, featureSchema, classifierSchema, idSchema, keySchema } from '../server/validation';
+import { MODEL, CLASSIFIER_VERSION } from '../src/shared';
 describe('API trust boundaries', () => {
+  it('validates the published classifier and rejects relaxed or malformed thresholds', () => {
+    const model = { version: CLASSIFIER_VERSION, featureModel: MODEL, sourceIds: [], trainedAt: new Date().toISOString(), classes: [{ label: 'A', background: false, prototypes: [[1, ...Array(383).fill(0)]], threshold: .90, fastThreshold: .97, examples: 1 }], supports: [] };
+    expect(classifierSchema.safeParse(model).success).toBe(true);
+    expect(classifierSchema.safeParse({ ...model, version: 'unknown' }).success).toBe(false);
+    model.classes[0].fastThreshold = .3;
+    expect(classifierSchema.safeParse(model).success).toBe(false);
+  });
   it('requires independent high-entropy keys and valid IDs', () => {
     expect(keySchema.safeParse('dev').success).toBe(false);
     expect(idSchema.safeParse({ $ne: null }).success).toBe(false);

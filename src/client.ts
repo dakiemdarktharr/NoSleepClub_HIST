@@ -67,18 +67,22 @@ export function shareLink(room?: Room | null) { return room ? `${location.origin
 export class Vision {
   private worker = new Worker(new URL('./vision.worker.ts', import.meta.url), { type: 'module' });
   private sequence = 0;
-  private pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+  private pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   constructor(progress: (message: string) => void) {
     this.worker.onmessage = ({ data }) => {
       if (data.event === 'progress') { progress(data.message); return; }
       const waiting = this.pending.get(data.id); if (!waiting) return;
+      clearTimeout(waiting.timer);
       this.pending.delete(data.id); data.error ? waiting.reject(new Error(data.error)) : waiting.resolve(data.result);
     };
-    this.worker.onerror = event => { console.error('Vision worker initialization:', event.message); for (const item of this.pending.values()) item.reject(new Error('Không mở được bộ nhận diện trên thiết bị này. Hãy thử Chrome hoặc Safari phiên bản mới.')); this.pending.clear(); };
+    this.worker.onerror = event => { console.error('Vision worker initialization:', event.message); for (const item of this.pending.values()) { clearTimeout(item.timer); item.reject(new Error('Không mở được bộ nhận diện trên thiết bị này. Hãy thử Chrome hoặc Safari phiên bản mới.')); } this.pending.clear(); };
   }
   request<T>(action: string, data: Record<string, unknown> = {}): Promise<T> {
     const id = ++this.sequence;
-    return new Promise((resolve, reject) => { this.pending.set(id, { resolve: value => resolve(value as T), reject }); this.worker.postMessage({ id, action, ...data }); });
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(action === 'init' ? 'Tải model quá lâu. Kiểm tra mạng và thử bật camera lại.' : 'Xử lý ảnh quá lâu. Hãy thử lại trên Chrome hoặc Safari mới.')); }, action === 'init' ? 180000 : 30000);
+      this.pending.set(id, { resolve: value => resolve(value as T), reject, timer }); this.worker.postMessage({ id, action, ...data });
+    });
   }
-  close() { this.worker.terminate(); for (const item of this.pending.values()) item.reject(new Error('Đã đóng bộ nhận diện.')); this.pending.clear(); }
+  close() { this.worker.terminate(); for (const item of this.pending.values()) { clearTimeout(item.timer); item.reject(new Error('Đã đóng bộ nhận diện.')); } this.pending.clear(); }
 }

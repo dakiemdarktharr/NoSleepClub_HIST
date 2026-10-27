@@ -6,5 +6,5 @@
     "allowImportingTsExtensions": true, "resolveJsonModule": true,
     "noEmit": true, "types": ["vite/client", "node"]
   },
-  "include": ["src", "api", "server", "tests", "vite.config.ts"]
+  "include": ["src", "api", "server", "tests", "scripts/*.mts", "vite.config.ts"]
 }

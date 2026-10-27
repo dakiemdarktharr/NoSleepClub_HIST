@@ -1,4 +1,4 @@
-import type { CatalogFrame, Prediction, Quality } from './shared';
+import type { Prediction, Quality } from './shared';
 export function normalize(vector: ArrayLike<number>): number[] {
   const values = Array.from(vector);
   const magnitude = Math.hypot(...values);
@@ -26,19 +26,6 @@ export function quality(data: Uint8ClampedArray, width: number, height: number):
   const accepted = sharpness >= 65 && brightness >= 18 && brightness <= 240;
   return { sharpness, brightness, accepted, reason: brightness < 18 ? 'Thiếu sáng' : brightness > 240 ? 'Quá sáng' : sharpness < 65 ? 'Ảnh mờ hoặc quá ít chi tiết' : 'Ảnh rõ' };
 }
-export function retrieve(embedding: number[], frames: CatalogFrame[]) {
-  const ranked = frames.map(frame => ({ frame, score: cosine(embedding, frame.embedding) })).sort((a, b) => b.score - a.score);
-  const labels = new Map<string, typeof ranked>();
-  for (const item of ranked) {
-    const name = item.frame.background ? '\u0000background' : item.frame.label.toLocaleLowerCase('vi').normalize('NFC');
-    const entries = labels.get(name) || []; entries.push(item); labels.set(name, entries);
-  }
-  const candidates = [...labels.entries()].map(([name, entries]) => ({ name, entries,
-    score: entries.slice(0, 2).reduce((sum, item) => sum + item.score, 0) / Math.min(2, entries.length) })).sort((a, b) => b.score - a.score);
-  const first = candidates[0];
-  const accepted = !!first && first.name !== '\u0000background' && first.entries.length >= 3 && first.score >= .80 && first.score - (candidates[1]?.score ?? 0) >= .065;
-  return { accepted, first, ranked, gap: first ? first.score - (candidates[1]?.score ?? 0) : 0 };
-}
 export class TemporalGate {
   private label: string | null = null;
   private count = 0;
@@ -47,6 +34,6 @@ export class TemporalGate {
     if (!prediction.label) { this.label = null; this.count = 0; this.previousAt = now; return prediction; }
     this.count = prediction.label === this.label && now - this.previousAt < 5000 ? this.count + 1 : 1;
     this.label = prediction.label; this.previousAt = now;
-    return this.count >= 3 ? prediction : { ...prediction, label: null, reason: 'Đang xác nhận qua nhiều frame' };
+    return prediction.immediate || this.count >= 2 ? prediction : { ...prediction, label: null, reason: 'Đang xác nhận thêm một frame' };
   }
 }

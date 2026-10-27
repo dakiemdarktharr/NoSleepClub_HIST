@@ -4,7 +4,7 @@ import type { Db, Document } from 'mongodb';
 import { z } from 'zod';
 import { CHUNK_SIZE } from '../src/shared.js';
 import { database } from './db.js';
-import { createFootageSchema, framesSchema, idSchema, keySchema } from './validation.js';
+import { createFootageSchema, framesSchema, classifierSchema, idSchema, keySchema } from './validation.js';
 
 type Request = IncomingMessage & { body?: unknown };
 class HttpError extends Error { constructor(public code: number, message: string) { super(message); } }
@@ -50,12 +50,22 @@ export async function dispatch(db: Db, req: Request, input: unknown): Promise<un
     if ((limit?.count || 0) > 5) throw new HttpError(429, 'Đã tạo nhiều phòng test. Hãy dùng lại phòng hiện tại hoặc thử sau.');
     if (await db.collection('workspaces').countDocuments({}) >= 40) throw new HttpError(429, 'Bản test đã đạt giới hạn phòng.');
     const roomId = randomUUID(), readKey = randomBytes(32).toString('hex'), writeKey = randomBytes(32).toString('hex');
-    await db.collection('workspaces').insertOne({ roomId, readHash: hash(readKey), writeHash: hash(writeKey), reserved: 0, createdAt: new Date() });
+    await db.collection('workspaces').insertOne({ roomId, readHash: hash(readKey), writeHash: hash(writeKey), reserved: 0, datasetVersion: 0, createdAt: new Date() });
     return { id: roomId, readKey, writeKey };
   }
-  const write = ['footage.create', 'footage.chunk', 'footage.frames', 'footage.complete', 'footage.delete'].includes(action);
+  const write = ['footage.create', 'footage.chunk', 'footage.frames', 'footage.complete', 'footage.delete', 'model.save'].includes(action);
   const workspace = await authorize(db, payload, write);
   const roomId = workspace.roomId as string;
+  if (action === 'model.get') return { model: workspace.modelArtifact || null };
+  if (action === 'model.save') {
+    const model = classifierSchema.parse(payload.model);
+    const references = await db.collection('footages').find({ roomId, status: 'ready', kind: 'reference', frameCount: { $gt: 0 } }).project({ footageId: 1, label: 1, background: 1 }).toArray();
+    const ids = references.map(item => item.footageId).sort();
+    if (JSON.stringify(ids) !== JSON.stringify([...model.sourceIds].sort()) || model.supports.some(frame => !references.some(item => item.footageId === frame.footageId && item.label === frame.label && item.background === frame.background))) throw new HttpError(409, 'Bộ mẫu đã thay đổi. Hãy huấn luyện lại.');
+    const saved = await db.collection('workspaces').updateOne({ roomId, datasetVersion: workspace.datasetVersion ?? { $exists: false } }, { $set: { modelArtifact: model } });
+    if (!saved.matchedCount) throw new HttpError(409, 'Bộ mẫu vừa thay đổi. Hãy huấn luyện lại.');
+    return { trained: true, classes: model.classes.length, version: model.version };
+  }
   if (action === 'workspace.get') {
     const items = await db.collection('footages').find({ roomId, ...(equalKey(payload.key as string, workspace.writeHash) ? {} : { status: 'ready' }) }).sort({ createdAt: -1 }).limit(12).toArray();
     return { id: roomId, footages: items.map(publicFootage) };
@@ -83,7 +93,7 @@ export async function dispatch(db: Db, req: Request, input: unknown): Promise<un
     const removed = await db.collection('footages').findOneAndDelete({ roomId, footageId });
     if (removed) await Promise.all([
       db.collection('frames').deleteMany({ footageId }), db.collection('chunks').deleteMany({ footageId }),
-      db.collection('workspaces').updateOne({ roomId }, { $inc: { reserved: -removed.reservation } }),
+      db.collection('workspaces').updateOne({ roomId }, { $inc: { reserved: -removed.reservation, datasetVersion: 1 }, $unset: { modelArtifact: '' } }),
       db.collection('quota').updateOne({ key: 'app' }, { $inc: { reserved: -removed.reservation } }),
     ]);
     return { deleted: true };
@@ -109,6 +119,7 @@ export async function dispatch(db: Db, req: Request, input: unknown): Promise<un
     const [chunks, frames] = await Promise.all([db.collection('chunks').countDocuments({ footageId }), db.collection('frames').countDocuments({ footageId })]);
     if (chunks !== footage.chunks || frames !== footage.frameCount) throw new HttpError(409, 'Footage chưa được tải lên đầy đủ. Hãy thử lưu lại.');
     await db.collection('footages').updateOne({ roomId, footageId }, { $set: { status: 'ready' } });
+    await db.collection('workspaces').updateOne({ roomId }, { $inc: { datasetVersion: 1 }, $unset: { modelArtifact: '' } });
     return { saved: true };
   }
   if (footage.status !== 'ready') throw new HttpError(409, 'Footage chưa sẵn sàng.');

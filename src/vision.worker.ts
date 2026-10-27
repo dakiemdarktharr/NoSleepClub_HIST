@@ -1,11 +1,12 @@
 import cvModule from '@techstark/opencv-js';
 import { env, pipeline, RawImage, type ImageFeatureExtractionPipeline } from '@huggingface/transformers';
-import { normalize, quality, retrieve } from './recognition';
-import type { CatalogFrame, Feature, Prediction } from './shared';
+import { normalize, quality } from './recognition';
+import { rankFewShot, trainFewShot } from './fewshot';
+import type { CatalogFrame, Feature, Prediction, TrainedClassifier } from './shared';
 
 const cv = cvModule;
 let extractor: ImageFeatureExtractionPipeline | null = null;
-let catalog: CatalogFrame[] = [];
+let classifier: TrainedClassifier = trainFewShot([], []);
 let initialization: Promise<void> | undefined;
 function ready() {
   if (!initialization) initialization = (async () => {
@@ -34,7 +35,6 @@ async function extract(image: ImageData, t: number) {
     cv.cvtColor(source, gray, cv.COLOR_RGBA2GRAY);
     detector.detectAndCompute(gray, mask, keypoints, descriptors);
     const n = Math.min(250, keypoints.size());
-    if (n < 18) return { feature: null, check: { ...check, accepted: false, reason: 'Khung hình chưa có đủ chi tiết để đối chiếu' } };
     const points: [number, number][] = Array.from({ length: n }, (_, index) => {
       const p = keypoints.get(index).pt; return [Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100];
     });
@@ -49,6 +49,7 @@ async function extract(image: ImageData, t: number) {
   } finally { source.delete(); gray.delete(); descriptors.delete(); mask.delete(); keypoints.delete(); detector.delete(); }
 }
 function geometry(query: Feature, reference: Feature) {
+  if (query.points.length < 10 || reference.points.length < 10) return 0;
   const a = cv.matFromArray(query.points.length, 32, cv.CV_8UC1, unbase64(query.descriptors));
   const b = cv.matFromArray(reference.points.length, 32, cv.CV_8UC1, unbase64(reference.descriptors));
   const matcher = new cv.BFMatcher(cv.NORM_HAMMING, false), matches = new cv.DMatchVectorVector();
@@ -61,12 +62,12 @@ function geometry(query: Feature, reference: Feature) {
       try {
         if (pair.size() < 2) continue;
         const m = pair.get(0), next = pair.get(1);
-        if (m.distance < 64 && m.distance < .72 * next.distance && !used.has(m.trainIdx)) {
+        if (m.distance < 64 && m.distance < .75 * next.distance && !used.has(m.trainIdx)) {
           used.add(m.trainIdx); from.push(...query.points[m.queryIdx]); to.push(...reference.points[m.trainIdx]);
         }
       } finally { pair.delete(); }
     }
-    if (from.length / 2 < 14) return 0;
+    if (from.length / 2 < 10) return 0;
     const src = cv.matFromArray(from.length / 2, 1, cv.CV_32FC2, from), dst = cv.matFromArray(to.length / 2, 1, cv.CV_32FC2, to), inlierMask = new cv.Mat();
     allocations.push(src, dst, inlierMask);
     const homography = cv.findHomography(src, dst, cv.RANSAC, 4, inlierMask, 600, .995);
@@ -75,30 +76,35 @@ function geometry(query: Feature, reference: Feature) {
     let count = 0; const xs: number[] = [], ys: number[] = [];
     for (let i = 0; i < inlierMask.rows; i++) if (inlierMask.data[i]) { count++; xs.push(from[i * 2]); ys.push(from[i * 2 + 1]); }
     const spread = xs.length ? ((Math.max(...xs) - Math.min(...xs)) / query.width) * ((Math.max(...ys) - Math.min(...ys)) / query.height) : 0;
-    return count >= 12 && count / (from.length / 2) >= .45 && spread >= .035 ? count : 0;
+    return count >= 10 && count / (from.length / 2) >= .35 && spread >= .025 ? count : 0;
   } finally { allocations.forEach(item => item.delete()); }
 }
 function predict(feature: Feature): Prediction {
-  const retrieved = retrieve(feature.embedding, catalog);
-  const empty = { label: null, similarity: retrieved.first?.score || 0, inliers: 0 };
-  if (!retrieved.accepted || !retrieved.first) return { ...empty, reason: catalog.length ? 'Chưa đủ khác biệt so với các khu vực đã lưu' : 'Phòng chưa có mẫu tham chiếu' };
-  let verified = 0, best = 0;
-  for (const entry of retrieved.first.entries.slice(0, 4)) {
-    const count = geometry(feature, entry.frame);
-    if (count) { verified++; best = Math.max(best, count); }
-    if (verified >= 2) break;
+  const ranked = rankFewShot(feature.embedding, classifier);
+  const unknown = { label: null, similarity: ranked.first?.score || 0, inliers: 0 };
+  if (!ranked.first) return { ...unknown, reason: 'Phòng chưa có mẫu đã học' };
+  // A strong learned match can be returned on the first frame, including one-shot classes.
+  if (ranked.fast) return { label: ranked.first.learned.label, similarity: ranked.first.score, inliers: 0, immediate: true, reason: 'Khớp mạnh với khu vực đã học' };
+  if (ranked.first.learned.background && ranked.gap >= .025) return { ...unknown, reason: 'Đây là khung cảnh khác' };
+  // Geometry corroborates a moderate match; a second overlapping reference is NOT required.
+  const verified = ranked.ranked.slice(0, 2).filter(candidate => candidate.score >= .60).map(candidate => ({ candidate,
+    inliers: Math.max(0, ...candidate.supports.slice(0, 3).map(item => geometry(feature, item.frame))) })).sort((a, b) => b.inliers - a.inliers);
+  const best = verified[0], second = verified[1]?.inliers || 0;
+  if (!best || best.inliers < 10 || best.candidate.learned.background || (second > 0 && best.inliers < second * 1.35 + 3)) {
+    return { ...unknown, reason: 'Chưa khớp đủ rõ với khu vực đã học' };
   }
-  return verified >= 2 ? { label: retrieved.first.entries[0].frame.label, reason: 'Đã khớp cảnh và các chi tiết hình học', similarity: retrieved.first.score, inliers: best }
-    : { ...empty, reason: 'Chưa xác nhận được chi tiết hình ảnh' };
+  return { label: best.candidate.learned.label, similarity: best.candidate.score, inliers: best.inliers, immediate: best.inliers >= 16, reason: 'Đã khớp với footage của khu vực' };
 }
-self.onmessage = async (event: MessageEvent<{ id: number; action: string; image?: ImageData; feature?: Feature; t?: number; frames?: CatalogFrame[] }>) => {
+self.onmessage = async (event: MessageEvent<{ id: number; action: string; image?: ImageData; feature?: Feature; t?: number; frames?: CatalogFrame[]; sourceIds?: string[]; model?: TrainedClassifier }>) => {
   const { id, action } = event.data;
   try {
     if (action === 'init') { await ready(); self.postMessage({ id, result: true }); return; }
-    if (action === 'index') { catalog = event.data.frames || []; self.postMessage({ id, result: catalog.length }); return; }
+    if (action === 'index' || action === 'train') { const trained = trainFewShot(event.data.frames || [], event.data.sourceIds || []); self.postMessage({ id, result: trained }); return; }
+    if (action === 'restore') { classifier = event.data.model!; self.postMessage({ id, result: classifier.classes.length }); return; }
     if (!extractor) throw new Error('Bộ nhận diện chưa sẵn sàng.');
     if (action === 'evaluate') { self.postMessage({ id, result: predict(event.data.feature!) }); return; }
+    const started = performance.now();
     const extracted = await extract(event.data.image!, event.data.t || 0);
-    self.postMessage({ id, result: action === 'extract' ? extracted : extracted.feature ? predict(extracted.feature) : { label: null, reason: extracted.check.reason, similarity: 0, inliers: 0 } });
+    self.postMessage({ id, result: action === 'extract' ? extracted : { ...(extracted.feature ? predict(extracted.feature) : { label: null, reason: extracted.check.reason, similarity: 0, inliers: 0 }), latencyMs: Math.round(performance.now() - started) } });
   } catch (error) { self.postMessage({ id, error: error instanceof Error ? error.message : 'Không xử lý được hình ảnh.' }); }
 };

@@ -1,5 +1,7 @@
 # Audit bản test
 
+> Hồ sơ bản v1. Quy tắc nhận diện đã được thay thế ở [bản quay 5 giây](audit-five-second.md).
+
 Ngày kiểm tra: 28/10/2026. Báo cáo được cập nhật sau kiểm tra trình duyệt và triển khai; không phải chứng nhận kiểm toán độc lập.
 
 ## Phạm vi và ranh giới

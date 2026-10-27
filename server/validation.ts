@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MODEL, MAX_FRAMES, MAX_VIDEO_BYTES } from '../src/shared.js';
+import { MODEL, CLASSIFIER_VERSION, MAX_FRAMES, MAX_VIDEO_BYTES } from '../src/shared.js';
 export const idSchema = z.uuid();
 export const keySchema = z.string().regex(/^[a-f0-9]{64}$/);
 export const featureSchema = z.object({
@@ -24,3 +24,9 @@ export const createFootageSchema = z.object({
   model: z.literal(MODEL), frameCount: z.number().int().min(0).max(MAX_FRAMES),
 });
 export const framesSchema = z.object({ offset: z.number().int().min(0).max(MAX_FRAMES - 1), frames: z.array(featureSchema).min(1).max(6) });
+const unitVectorSchema = z.array(z.number().finite().min(-1.001).max(1.001)).length(384).refine(vector => Math.abs(Math.hypot(...vector) - 1) < .015);
+export const classifierSchema = z.object({
+  version: z.literal(CLASSIFIER_VERSION), featureModel: z.literal(MODEL), sourceIds: z.array(idSchema).max(12), trainedAt: z.iso.datetime(),
+  classes: z.array(z.object({ label: z.string().trim().min(1).max(80), background: z.boolean(), prototypes: z.array(unitVectorSchema).min(1).max(3), threshold: z.number().min(.88).max(.94), fastThreshold: z.number().min(.95).max(.985), examples: z.number().int().min(1).max(960) })).max(12),
+  supports: z.array(featureSchema.and(z.object({ label: z.string().min(1).max(80), background: z.boolean(), footageId: idSchema }))).max(24),
+});

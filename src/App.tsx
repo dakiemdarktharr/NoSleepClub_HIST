@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { downloadFootage, loadCatalog, rememberRoom, restoreRoom, rpc, saveFootage, shareLink, Vision } from './client';
-import { cosine, TemporalGate } from './recognition';
-import { MAX_FRAMES, MAX_VIDEO_BYTES, type Feature, type Footage, type Mode, type Prediction, type Quality, type Room } from './shared';
+import { quality, TemporalGate } from './recognition';
+import { currentModel, selectTrainingFrames, sourceIdsFor } from './fewshot';
+import { readModelCache, writeModelCache } from './model-cache';
+import { CAPTURE_SECONDS, MAX_VIDEO_BYTES, type CapturedFrame, type Feature, type Footage, type Mode, type Prediction, type Room, type TrainedClassifier } from './shared';
 
-type Draft = { blob: Blob; frames: Feature[]; duration: number; cover: string };
+type Draft = { blob: Blob; frames: Feature[]; captured: CapturedFrame[]; duration: number; cover: string; savedId?: string };
 const emptyPrediction: Prediction = { label: null, reason: 'Chờ camera và mẫu tham chiếu', similarity: 0, inliers: 0 };
 const seconds = (value: number) => `${Math.floor(value / 60).toString().padStart(2, '0')}:${Math.floor(value % 60).toString().padStart(2, '0')}`;
 const sizeText = (value: number) => `${(value / 1024 / 1024).toFixed(1)} MB`;
@@ -38,6 +40,7 @@ export default function App() {
   const [qrImage, setQrImage] = useState('');
   const [joinLink, setJoinLink] = useState('');
   const [report, setReport] = useState('');
+  const [learnedCount, setLearnedCount] = useState(0);
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef(document.createElement('canvas'));
   const stream = useRef<MediaStream | null>(null);
@@ -49,7 +52,11 @@ export default function App() {
   const recognizing = useRef(false);
   const generation = useRef(0);
   const cameraGeneration = useRef(0);
-  const samples = useRef<Feature[]>([]);
+  const captures = useRef<CapturedFrame[]>([]);
+  const captureTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preparation = useRef<Promise<TrainedClassifier> | null>(null);
+  const activeModelRoom = useRef(room?.id || null);
   const startedAt = useRef(0);
   const temporal = useRef(new TemporalGate());
   const lastPredictionAt = useRef(0);
@@ -71,6 +78,36 @@ export default function App() {
     }
     return initialization.current;
   }
+  async function prepareClassifier(target: Room, clips: Footage[], forceTrain = false) {
+    const ids = sourceIdsFor(clips);
+    let model = forceTrain ? null : await readModelCache(target.id);
+    if (!forceTrain && !currentModel(model, ids)) {
+      const remote = await rpc<{ model: TrainedClassifier | null }>('model.get', {}, target);
+      model = remote.model;
+    }
+    if (!currentModel(model, ids) || forceTrain) {
+      setStatus('Đang huấn luyện bộ phân loại từ footage đã lưu…');
+      const frames = await loadCatalog(target, clips);
+      model = await vision.current!.request<TrainedClassifier>('train', { frames, sourceIds: ids });
+      if (target.writeKey && model.sourceIds.length) await rpc('model.save', { model }, target, true);
+    }
+    await writeModelCache(target.id, model!);
+    if (activeModelRoom.current === target.id) {
+      await vision.current!.request('restore', { model });
+      setLearnedCount(model!.classes.filter(item => !item.background).length);
+    }
+    return model!;
+  }
+  function prewarm(target: Room, clips: Footage[]) {
+    activeModelRoom.current = target.id;
+    const loading = ensureVision();
+    const pending = Promise.all([loading, prepareClassifier(target, clips)]).then(([, model]) => {
+      if (activeModelRoom.current === target.id) setStatus(model.classes.length ? 'Bộ mẫu đã học và sẵn sàng nhận diện.' : 'Quay một video 5 giây để dạy khu vực đầu tiên.');
+      return model;
+    }).catch(error => { if (preparation.current === pending) preparation.current = null; throw error; });
+    preparation.current = pending;
+    return pending;
+  }
   function snapshot() {
     const element = video.current;
     if (!element?.videoWidth) throw new Error('Chờ camera hiện hình rồi thử lại.');
@@ -88,6 +125,8 @@ export default function App() {
   }
   function stopCamera() {
     cameraGeneration.current++; generation.current++; recognizing.current = false;
+    if (captureTimer.current) clearInterval(captureTimer.current);
+    if (stopTimer.current) clearTimeout(stopTimer.current);
     if (recorder.current?.state === 'recording') recorder.current.stop();
     recordingNow.current = false; setRecording(false);
     stream.current?.getTracks().forEach(track => track.stop()); stream.current = null;
@@ -137,12 +176,15 @@ export default function App() {
   async function enter(next: Mode) {
     setBusy(true); setError('');
     try {
+      let target = room;
+      let clips: Footage[] = [];
       if (next === 'dev' && !room?.writeKey) {
-        const target = await rpc<Room>('workspace.create');
+        target = await rpc<Room>('workspace.create');
         rememberRoom(target); setRoom(target); history.replaceState(null, '', '?room=' + target.id);
         setFootages([]); setStatus('Phòng test mới đã sẵn sàng. Quay từng khu vực rồi đặt tên.');
-      } else if (room) { await refresh(room); setStatus(next === 'dev' ? 'Quay một footage cho từng khu vực.' : 'Bật camera để nhận diện các khu vực đã lưu.'); }
+      } else if (room) { clips = await refresh(room); setStatus(next === 'dev' ? 'Quay một video 5 giây để dạy khu vực.' : 'Đang chuẩn bị bộ mẫu đã học…'); }
       setMode(next);
+      if (target) void prewarm(target, clips).catch(fail);
     } catch (error) { fail(error); } finally { setBusy(false); }
   }
   async function openCamera() {
@@ -153,7 +195,8 @@ export default function App() {
       if (current !== cameraGeneration.current) { next.getTracks().forEach(track => track.stop()); return; }
       stream.current = next; video.current!.srcObject = next; await video.current!.play();
       setCamera(true); setQualityLabel('Camera trực tiếp');
-      setStatus('Camera đã bật. Đang tải bộ nhận diện; lần đầu cần mạng.');
+      setStatus('Camera đã bật. Có thể quay mẫu 5 giây. Lần đầu model cần tải qua mạng.');
+      if (mode === 'dev') { void ensureVision().catch(fail); return; }
       await ensureVision();
       if (mode === 'user' && room && current === cameraGeneration.current) await startRecognition();
     } catch (error) {
@@ -162,42 +205,32 @@ export default function App() {
       fail(named.name === 'NotAllowedError' ? new Error('Chưa được cấp quyền camera. Mở quyền Camera của trang rồi thử lại.') : named.name === 'NotReadableError' ? new Error('Camera đang được app khác sử dụng. Đóng app đó rồi thử lại.') : error);
     } finally { setBusy(false); }
   }
-  async function loop(isRecording: boolean) {
+  async function loop() {
     const current = ++generation.current;
-    while (current === generation.current && stream.current && (isRecording ? recordingNow.current : recognizing.current)) {
+    while (current === generation.current && stream.current && recognizing.current) {
       try {
-        if (isRecording) {
-          if (samples.current.length < MAX_FRAMES) {
-            const extracted = await vision.current!.request<{ feature: Feature | null; check: Quality }>('extract', { image: snapshot(), t: (performance.now() - startedAt.current) / 1000 });
-            if (current !== generation.current || !recordingNow.current) break;
-            setQualityLabel(extracted.check.reason);
-            if (extracted.feature && !samples.current.slice(-8).some(previous => cosine(previous.embedding, extracted.feature!.embedding) > .995)) {
-              samples.current.push(extracted.feature); setSampleCount(samples.current.length);
-            } else setSkipped(value => value + 1);
-          } else setQualityLabel('Đã chọn đủ 80 frame tham chiếu');
-        } else {
           const next = await vision.current!.request<Prediction>('predict', { image: snapshot() });
           if (current !== generation.current || !recognizing.current) break;
-          setQualityLabel(next.inliers ? `${next.inliers} chi tiết khớp` : next.reason);
+          setQualityLabel(`${next.inliers ? `${next.inliers} chi tiết khớp` : next.reason}${next.latencyMs !== undefined ? ` · ${next.latencyMs} ms` : ''}`);
           lastPredictionAt.current = performance.now();
           setPrediction(temporal.current.push(next));
-        }
       } catch (error) { fail(error); setPrediction(emptyPrediction); break; }
-      await new Promise(resolve => setTimeout(resolve, isRecording ? 550 : 250));
+      await new Promise(resolve => setTimeout(resolve, 60));
     }
   }
-  async function startRecognition() {
+  async function startRecognition(update = false) {
     if (!room) return;
+    const currentCamera = cameraGeneration.current;
     setPrediction(emptyPrediction); recognizing.current = false; generation.current++;
-    setStatus('Đang tải mẫu tham chiếu của phòng…');
-    const clips = await refresh(); const frames = await loadCatalog(room, clips);
-    await vision.current!.request('index', { frames });
+    const pending = !update && preparation.current ? preparation.current : prewarm(room, await refresh());
+    const model = await pending;
+    if (!stream.current || cameraGeneration.current !== currentCamera) return;
     temporal.current = new TemporalGate(); recognizing.current = true;
-    setStatus(frames.length ? `Đã tải ${frames.length} frame tham chiếu. Hướng camera vào khu vực đã quay.` : 'Phòng chưa có mẫu. Vào Dev để quay footage trước.');
-    void loop(false);
+    setStatus(model.classes.length ? 'Đã nạp bộ phân loại đã học. Hướng camera vào khu vực đã quay.' : 'Phòng chưa có mẫu. Vào Dev để quay footage trước.');
+    void loop();
   }
   function startRecording() {
-    if (!stream.current || !modelReady || !room?.writeKey) return;
+    if (!stream.current || !room?.writeKey) return;
     setError('');
     if (!window.MediaRecorder) { setError('Trình duyệt chưa hỗ trợ quay video. Hãy cập nhật Chrome hoặc Safari.'); return; }
     const mime = ['video/webm;codecs=vp8', 'video/webm', 'video/mp4'].find(value => MediaRecorder.isTypeSupported(value));
@@ -205,19 +238,35 @@ export default function App() {
     try {
       const recorderInstance = new MediaRecorder(stream.current, { mimeType: mime, videoBitsPerSecond: 450000 });
       const chunks: Blob[] = []; const initialCover = coverImage();
-      recorder.current = recorderInstance; samples.current = []; setSampleCount(0); setSkipped(0); setElapsed(0); startedAt.current = performance.now();
+      recorder.current = recorderInstance; captures.current = []; setSampleCount(0); setSkipped(0); setElapsed(0); startedAt.current = performance.now();
       recorderInstance.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
       recorderInstance.onerror = () => { fail(new Error('Quay video bị gián đoạn. Hãy kiểm tra video trước khi lưu.')); };
       recorderInstance.onstop = () => {
+        if (captureTimer.current) clearInterval(captureTimer.current);
+        if (stopTimer.current) clearTimeout(stopTimer.current);
         recordingNow.current = false; setRecording(false); generation.current++;
         const blob = new Blob(chunks, { type: recorderInstance.mimeType });
-        setDraft({ blob, frames: [...samples.current], duration: (performance.now() - startedAt.current) / 1000, cover: initialCover });
+        setDraft({ blob, frames: [], captured: [...captures.current], duration: (performance.now() - startedAt.current) / 1000, cover: initialCover });
+        captures.current = [];
         setLabel(''); setBackground(false); setKind('reference'); setStatus('Đã dừng quay. Đặt tên khu vực để lưu footage.');
       };
-      recorderInstance.start(1000); recordingNow.current = true; setRecording(true); void loop(true);
+      recorderInstance.start(1000); recordingNow.current = true; setRecording(true);
+      const capture = () => {
+        if (!recordingNow.current || captures.current.length >= 30) return;
+        try {
+          const image = snapshot(), check = quality(image.data, image.width, image.height);
+          setQualityLabel(check.reason);
+          if (check.accepted) { captures.current.push({ image, t: (performance.now() - startedAt.current) / 1000, sharpness: check.sharpness }); setSampleCount(captures.current.length); }
+          else setSkipped(value => value + 1);
+        } catch { /* The next scheduled camera frame can recover. */ }
+      };
+      capture(); captureTimer.current = setInterval(capture, 200);
+      stopTimer.current = setTimeout(stopRecording, CAPTURE_SECONDS * 1000);
     } catch (error) { fail(error); }
   }
   function stopRecording() {
+    if (captureTimer.current) clearInterval(captureTimer.current);
+    if (stopTimer.current) clearTimeout(stopTimer.current);
     recordingNow.current = false; generation.current++;
     if (recorder.current?.state === 'recording') recorder.current.stop();
     setRecording(false);
@@ -227,8 +276,29 @@ export default function App() {
     setBusy(true); setError('');
     try {
       if (draft.blob.size > MAX_VIDEO_BYTES) throw new Error('Video vượt 24 MB của bản test. Tải video về để giữ lại, rồi quay đoạn ngắn hơn.');
-      await saveFootage(room, draft.blob, draft.frames, { label: label.trim(), kind, background, duration: draft.duration, cover: draft.cover }, setStatus);
-      setDraft(null); await refresh(); setStatus('Đã lưu footage và nhãn khu vực. Có thể dùng QR để thử trên điện thoại khác.');
+      if (!draft.captured.length) throw new Error('Video chưa có frame rõ. Hãy giữ máy ổn định và quay lại 5 giây.');
+      await ensureVision();
+      let frames = draft.frames;
+      if (!frames.length) {
+        const selected = selectTrainingFrames(draft.captured);
+        frames = [];
+        for (let index = 0; index < selected.length; index++) {
+          setStatus(`Đang học hình ảnh ${index + 1}/${selected.length}…`);
+          const extracted = await vision.current!.request<{ feature: Feature | null }>('extract', { image: selected[index].image, t: selected[index].t });
+          if (extracted.feature) frames.push(extracted.feature);
+        }
+        if (!frames.length) throw new Error('Không đọc được frame rõ từ video. Hãy quay lại nơi có ánh sáng tốt hơn.');
+        setDraft(previous => previous ? { ...previous, frames } : previous);
+      }
+      if (!draft.savedId) {
+        const savedId = await saveFootage(room, draft.blob, frames, { label: label.trim(), kind, background, duration: draft.duration, cover: draft.cover }, setStatus);
+        setDraft(previous => previous ? { ...previous, frames, savedId } : previous);
+      }
+      const clips = await refresh();
+      const trained = await prepareClassifier(room, clips, true);
+      preparation.current = Promise.resolve(trained);
+      setError('');
+      setDraft(null); setStatus(`Đã huấn luyện ${trained.classes.filter(item => !item.background).length} khu vực. Chuyển sang User để thử ngay.`);
     } catch (error) { fail(error); } finally { setBusy(false); }
   }
   async function removeFootage(item: Footage) {
@@ -245,7 +315,7 @@ export default function App() {
   async function evaluate() {
     if (!room) return; setBusy(true); setError(''); stopCamera();
     try {
-      await ensureVision(); await vision.current!.request('index', { frames: await loadCatalog(room, footages) });
+      await ensureVision(); await prepareClassifier(room, footages);
       let correct = 0, wrong = 0, uncertain = 0, falseAccept = 0, total = 0;
       for (const clip of readyClips.filter(item => item.kind === 'validation')) {
         let offset: number | null = 0;
@@ -266,6 +336,16 @@ export default function App() {
       setStatus('Đã kiểm thử. Footage kiểm thử không được đưa vào mẫu tham chiếu.');
     } catch (error) { fail(error); } finally { setBusy(false); }
   }
+  async function trainSaved() {
+    if (!room) return;
+    setBusy(true); setError('');
+    try {
+      await ensureVision(); const clips = await refresh();
+      const model = await prepareClassifier(room, clips, true);
+      preparation.current = Promise.resolve(model);
+      setStatus(`Đã huấn luyện lại ${model.classes.filter(item => !item.background).length} khu vực từ footage đã lưu.`);
+    } catch (error) { fail(error); } finally { setBusy(false); }
+  }
   function join(event: React.FormEvent) {
     event.preventDefault();
     try { const value = new URL(joinLink); if (value.origin !== location.origin || !value.searchParams.has('room')) throw new Error('Hãy dán link phòng được tạo bởi app này.'); location.assign(value.href); }
@@ -283,7 +363,7 @@ export default function App() {
         </div>
         <div className="landing-bottom"><span><i /> Khi chưa nhận ra, app trả <b>...</b></span><button className="text-button" onClick={() => setShowQR(true)}>Mở app trên điện thoại <Icon name="qr" /></button></div>
       </section> : <>
-        <div className="workspace-heading"><div><button className="text-button back" disabled={busy || recording || !!draft} onClick={() => { stopCamera(); setMode(null); }}><Icon name="back" /> Đổi vai trò</button><h1>{mode === 'dev' ? 'Ghi lại một nơi.' : 'Bạn đang nhìn nơi nào?'}</h1><p>{mode === 'dev' ? 'Mỗi footage dành cho một khu vực. Quay chậm, đổi nhẹ góc và khoảng cách.' : 'Chỉ hiện tên đã lưu khi hình ảnh khớp và kết quả ổn định.'}</p></div><span className="mode-badge">{mode === 'dev' ? 'Dev' : 'User'} / Test</span></div>
+        <div className="workspace-heading"><div><button className="text-button back" disabled={busy || recording || !!draft} onClick={() => { stopCamera(); setMode(null); }}><Icon name="back" /> Đổi vai trò</button><h1>{mode === 'dev' ? 'Ghi lại một nơi.' : 'Bạn đang nhìn nơi nào?'}</h1><p>{mode === 'dev' ? 'Một khu vực, một video 5 giây. Giữ máy tương đối ổn định; đặt tên rồi huấn luyện.' : 'Bộ mẫu đã học được nạp sẵn. Khớp mạnh thì hiện tên ngay; không khớp sẽ là ...'}</p></div><span className="mode-badge">{mode === 'dev' ? 'Dev' : 'User'} / Test</span></div>
         {mode === 'user' && !room ? <section className="join-panel"><Icon name="qr" /><h2>Mở một phòng test</h2><p>Ở Dev, quay và lưu footage rồi mở QR của phòng. Dùng điện thoại quét QR đó để vào User với cùng bộ mẫu.</p><form onSubmit={join}><label htmlFor="join-link">Hoặc dán link phòng</label><input id="join-link" type="url" value={joinLink} onChange={event => setJoinLink(event.target.value)} placeholder="https://…/?room=…#view=…" required /><button className="primary">Mở phòng</button></form><button className="text-button" disabled={busy} onClick={() => void enter('dev')}>Vào Dev để tạo phòng</button></section> : <div className="workspace">
           <section className="camera-panel" aria-label="Camera trực tiếp">
             <div className={`viewfinder ${recording ? 'recording' : ''}`}>
@@ -294,13 +374,14 @@ export default function App() {
               {mode === 'user' && <div className={`recognition-result ${prediction.label ? 'matched' : ''}`} role="status" aria-live="polite" aria-atomic="true"><span>{prediction.label ? 'Khu vực nhận diện' : 'Chưa xác nhận được khu vực'}</span><strong>{prediction.label || '...'}</strong><p>{prediction.reason}</p></div>}
             </div>
             <div className="camera-footer"><span className="quality-label"><i className={modelReady ? 'ready' : ''} />{qualityLabel}</span>{camera && <button className="text-button" disabled={recording || busy} onClick={stopCamera}>Tắt camera</button>}</div>
-            {mode === 'dev' ? <div className="record-toolbar"><div><strong>{seconds(elapsed)}</strong><span>{sampleCount} frame rõ · {skipped} frame bỏ qua</span></div><button className={`record-button ${recording ? 'is-recording' : ''}`} disabled={!camera || !modelReady || busy || !!draft} onClick={recording ? stopRecording : startRecording}><span />{recording ? 'Dừng quay' : 'Bắt đầu quay'}</button></div> : <div className="user-tools"><span>{labels.size} khu vực · {referenceClips.length} footage tham chiếu</span><button disabled={!camera || busy || !modelReady} onClick={() => { setBusy(true); startRecognition().catch(fail).finally(() => setBusy(false)); }}>Cập nhật mẫu</button></div>}
-            <p className="camera-note">{mode === 'dev' ? 'Frame mờ hoặc thiếu chi tiết bị loại khỏi mẫu. Video gốc vẫn được giữ. Giới hạn lưu bản test: 24 MB/footage, 80 frame chọn lọc.' : 'Ảnh camera User được xử lý trên thiết bị, không tải lên server. Kết quả nhận diện khung cảnh, không phải tọa độ trong phòng.'}</p>
+            {mode === 'dev' ? <div className="record-toolbar"><div><strong>{seconds(elapsed)} / 00:05</strong><span>{sampleCount} frame rõ · {skipped} frame bỏ qua</span></div><button className={`record-button ${recording ? 'is-recording' : ''}`} disabled={!camera || busy || !!draft} onClick={recording ? stopRecording : startRecording}><span />{recording ? 'Dừng quay' : 'Quay mẫu 5 giây'}</button></div> : <div className="user-tools"><span>{learnedCount || labels.size} khu vực đã học · {referenceClips.length} footage</span><button disabled={!camera || busy || !modelReady} onClick={() => { setBusy(true); startRecognition(true).catch(fail).finally(() => setBusy(false)); }}>Cập nhật mẫu</button></div>}
+            <p className="camera-note">{mode === 'dev' ? 'Video tự dừng sau 5 giây. Các frame rõ được xử lý đầy đủ sau khi dừng, rồi lưu bộ phân loại để User dùng lại. Không cần quay dài hoặc quay nhiều lần.' : 'Khớp mạnh được nhận từ frame đầu; trường hợp yếu cần thêm một frame. Lần đầu trên thiết bị mới vẫn cần tải model. Camera User không tải ảnh lên server.'}</p>
           </section>
           <aside className="library"><div className="library-heading"><h2>{mode === 'dev' ? 'Footage của phòng' : 'Những nơi đã lưu'}</h2><span>{readyClips.length}</span></div><p>{mode === 'dev' ? 'Tên footage là nhãn của khu vực. Nhiều footage cùng tên bổ sung thêm góc nhìn.' : 'App chỉ có thể trả về các tên từ footage tham chiếu này.'}</p>
-            {!footages.length && <div className="empty-library"><Icon name="record" /><strong>Chưa có footage</strong><p>{mode === 'dev' ? 'Bật camera, quay một khu vực rồi đặt tên khi dừng.' : 'Cần quay mẫu ở Dev trước khi nhận diện.'}</p></div>}
+            {!footages.length && <div className="empty-library"><Icon name="record" /><strong>Chưa có footage</strong><p>{mode === 'dev' ? 'Bật camera, quay 5 giây rồi đặt tên và huấn luyện.' : 'Cần quay mẫu ở Dev trước khi nhận diện.'}</p></div>}
             <div className="footage-list">{footages.map(item => <article className="footage" key={item.id}><img src={item.cover} alt={`Khung hình ${item.label}`} /><div><h3>{item.label}</h3><span>{seconds(item.duration)} · {item.frameCount} frame · {sizeText(item.size)}</span><small>{item.status === 'pending' ? 'Lưu chưa hoàn tất' : item.kind === 'validation' ? 'Kiểm thử riêng' : item.background ? 'Mẫu cảnh khác' : 'Mẫu tham chiếu'}</small>{mode === 'dev' && <div className="footage-actions">{item.status === 'ready' && <button disabled={busy || recording} onClick={() => void download(item)}>Tải video</button>}<button disabled={busy || recording} onClick={() => void removeFootage(item)}>Xóa</button></div>}</div></article>)}</div>
             <div className="share-panel"><Icon name="qr" /><h3>Thử trên thiết bị khác</h3><p>QR của phòng mở cùng bộ mẫu, chỉ chia sẻ quyền xem và nhận diện.</p><button onClick={() => setShowQR(true)}>Mở QR của phòng</button></div>
+            {mode === 'dev' && <div className="test-tools"><h3>Bộ nhận diện đã học</h3><p>Footage cũ vẫn dùng được. Có thể huấn luyện lại mà không quay lại video.</p><button disabled={busy || recording || !!draft || !referenceClips.some(item => item.frameCount > 0)} onClick={() => void trainSaved()}>Huấn luyện từ footage đã lưu</button></div>}
             {mode === 'dev' && <details className="test-tools"><summary>Kiểm thử độ tin cậy</summary><p>Quay footage mới, chọn “Kiểm thử riêng” khi lưu. Thử lại cùng tên khu vực và cả cảnh lạ; các footage này không làm mẫu tham chiếu.</p><button disabled={busy || recording || !readyClips.some(item => item.kind === 'validation')} onClick={() => void evaluate()}>Chạy kiểm thử riêng</button>{report && <p className="evaluation-report">{report}</p>}</details>}
           </aside>
         </div>}
@@ -309,7 +390,7 @@ export default function App() {
       {error && <div className="error" role="alert">{error}<button aria-label="Đóng thông báo lỗi" onClick={() => setError('')}>×</button></div>}
     </main>
     <footer className="footer"><span>NoSleepClub / HIST</span><span>Bản thử nghiệm nhận diện nơi chốn</span><a href="https://github.com/dakiemdarktharr/NoSleepClub_HIST" target="_blank" rel="noreferrer">Mã nguồn & tài liệu</a></footer>
-    {draft && <div className="modal-backdrop"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="draft-title"><span className="test-badge">Footage mới</span><h2 id="draft-title">Đặt tên nơi vừa quay</h2><p>{seconds(draft.duration)} · {sizeText(draft.blob.size)} · {draft.frames.length} frame được chọn</p><form onSubmit={event => void submitFootage(event)}><label htmlFor="place-name">Tên khu vực</label><input autoFocus id="place-name" placeholder="Ví dụ: Bàn làm việc" maxLength={80} value={label} onChange={event => setLabel(event.target.value)} required disabled={busy} /><label htmlFor="footage-kind">Dùng footage này để</label><select id="footage-kind" value={kind} onChange={event => setKind(event.target.value as typeof kind)} disabled={busy}><option value="reference">Làm mẫu tham chiếu</option><option value="validation">Kiểm thử riêng, không làm mẫu</option></select><label className="checkbox-label"><input type="checkbox" checked={background} onChange={event => setBackground(event.target.checked)} disabled={busy} /> Đây là cảnh khác, dùng để từ chối nhận diện</label>{draft.frames.length < 3 && <p className="warning">Footage có ít frame rõ. App có thể chỉ trả “...” với khu vực này; hãy quay thêm chậm hơn.</p>}<button className="primary wide" disabled={busy || !label.trim() || draft.blob.size > MAX_VIDEO_BYTES}>Lưu footage & khu vực</button></form><div className="modal-actions"><button disabled={busy} onClick={() => saveBlob(draft.blob, `footage.${draft.blob.type.includes('mp4') ? 'mp4' : 'webm'}`)}>Tải video gốc</button><button disabled={busy} onClick={() => { setDraft(null); setError(''); setStatus('Đã bỏ footage chưa lưu.'); }}>Bỏ footage</button></div>{busy && <p role="status">{status}</p>}{error && <p className="warning" role="alert">{error}</p>}</section></div>}
+    {draft && <div className="modal-backdrop"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="draft-title"><span className="test-badge">Video {CAPTURE_SECONDS} giây</span><h2 id="draft-title">Đặt tên rồi huấn luyện</h2><p>{seconds(draft.duration)} · {sizeText(draft.blob.size)} · {draft.captured.length} frame rõ đã giữ</p><form onSubmit={event => void submitFootage(event)}><label htmlFor="place-name">Tên khu vực</label><input autoFocus id="place-name" placeholder="Ví dụ: Bàn làm việc" maxLength={80} value={label} onChange={event => setLabel(event.target.value)} required disabled={busy || !!draft.savedId} /><label htmlFor="footage-kind">Dùng footage này để</label><select id="footage-kind" value={kind} onChange={event => setKind(event.target.value as typeof kind)} disabled={busy || !!draft.savedId}><option value="reference">Dạy model nhận diện khu vực này</option><option value="validation">Kiểm thử riêng, không làm mẫu</option></select><label className="checkbox-label"><input type="checkbox" checked={background} onChange={event => setBackground(event.target.checked)} disabled={busy || !!draft.savedId} /> Đây là cảnh khác, dùng để từ chối nhận diện</label>{!draft.captured.length && <p className="warning">Chưa có frame rõ. Tải video để giữ lại hoặc quay lại ở nơi đủ sáng, giữ máy ổn định.</p>}<button className="primary wide" disabled={busy || !label.trim() || !draft.captured.length || draft.blob.size > MAX_VIDEO_BYTES}>{draft.savedId ? 'Thử huấn luyện lại' : 'Lưu & huấn luyện'}</button></form><div className="modal-actions"><button disabled={busy} onClick={() => saveBlob(draft.blob, `footage.${draft.blob.type.includes('mp4') ? 'mp4' : 'webm'}`)}>Tải video gốc</button><button disabled={busy} onClick={() => { setDraft(null); setError(''); setStatus('Đã đóng footage.'); }}>Đóng</button></div>{busy && <p role="status">{status}</p>}{error && <p className="warning" role="alert">{error}</p>}</section></div>}
     {showQR && <div className="modal-backdrop" onClick={() => setShowQR(false)}><section className="modal qr-modal" role="dialog" aria-modal="true" aria-labelledby="qr-title" onClick={event => event.stopPropagation()}><button className="modal-close" aria-label="Đóng mã QR" onClick={() => setShowQR(false)}>×</button><h2 id="qr-title">{room ? 'Mở phòng trên điện thoại' : 'Mở HIST trên điện thoại'}</h2><p>{room ? 'Dùng camera điện thoại quét mã. Link có quyền xem mẫu và nhận diện; không có quyền sửa footage.' : 'Quét mã để chọn User hoặc Dev. Sau khi lưu footage, dùng QR của phòng để chia sẻ cùng bộ mẫu.'}</p>{qrImage && <img className="qr-image" src={qrImage} alt="Mã QR mở app HIST" />}<div className="qr-actions"><button onClick={() => { navigator.clipboard?.writeText(link).then(() => setStatus('Đã sao chép link.')).catch(fail); }}>Sao chép link</button><button disabled={!qrImage} onClick={() => { const a = document.createElement('a'); a.href = qrImage; a.download = 'HIST-QR.png'; a.click(); }}>Tải QR</button></div><p className="test-note">Nếu app nhắn tin chặn camera, mở link bằng Safari hoặc Chrome.</p></section></div>}
   </>;
 }
