@@ -36,3 +36,15 @@ Ngày kiểm tra: 28/10/2026. Báo cáo được cập nhật sau kiểm tra tr�
 - Đã xóa footage nhân tạo sau các kiểm tra.
 - Node test đã nâng riêng trong `.tools` lên 24.22.1 và kiểm tra SHA-256 theo file chính thức; không thay Node toàn máy.
 - Kiểm tra production phát hiện module API cần đuôi `.js` khi chạy Node ESM. Đã sửa import, biên dịch riêng bằng NodeNext và chạy module health đã biên dịch: HTTP 200, MongoDB connected. CI được chạy lại trên bản sửa.
+
+## Xác minh sau triển khai
+
+- URL: https://nosleepclub-hist-connected.vercel.app/ — production công khai, không yêu cầu đăng nhập Vercel.
+- Project hoạt động: `nosleepclub-hist`, team ACNE, ID `prj_70MScY0LmO2d24FJaxRgWIyG8xfK`. Đã xác minh Git link tới `dakiemdarktharr/NoSleepClub_HIST` bằng danh sách linked projects và bộ lọc repo ID.
+- Commit chức năng đã kiểm tra: `c5a683ababea4f3213e74b4bee4cf2480a3734f8`. Push commit này tự sinh production deployment `dpl_BwtVQRXnYAtQYc4FxqRPhEwD8i3w`, trạng thái READY, source git. CI GitHub tương ứng đã thành công.
+- `/api/health` trả HTTP 200 với `database: connected` trên HTTPS production.
+- Model tải và chạy thật dưới CSP production. Đã quay cảnh bàn nhân tạo bằng MediaRecorder, lọc / trích 4 frame, đặt tên, lưu MongoDB qua API production, chuyển User và nhận đúng tên sau xác minh hình học / thời gian; kiểm tra ghi nhận 202 chi tiết khớp.
+- Một cảnh lưới hình lặp lại bị từ chối ở bước xác minh chi tiết thay vì ép trả tên. Điều này minh họa lựa chọn ưu tiên từ chối khi hình học không rõ.
+- Đã xóa các footage production nhân tạo sau kiểm tra. QR trong repo chỉ trỏ về trang chủ HTTPS, không có khóa phòng hoặc credential.
+- Project tạo ban đầu không có Git link đã được đổi tên `nosleepclub-hist-initial`, bật bảo vệ mọi deployment và xóa giá trị cấu hình MongoDB. Bản bàn giao dùng project đã kết nối Git ở trên.
+- Chưa thử camera phần cứng trên điện thoại thật của người dùng. Giao diện được kiểm tra ở viewport 390px và phiên trình duyệt tách biệt; cần thực hiện kế hoạch validation tại căn phòng thật.

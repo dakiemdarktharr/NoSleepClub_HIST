@@ -2,6 +2,10 @@
 
 Web test trên điện thoại: **Dev quay footage và đặt tên khu vực → chia sẻ QR của phòng → User dùng camera để nhận diện**. Khi không đủ bằng chứng, User hiển thị `...`.
 
+**[Mở bản test HTTPS](https://nosleepclub-hist-connected.vercel.app/)** · [QR mở app](docs/qr-app.png) · [Audit](docs/audit.md)
+
+![QR mở app trên điện thoại](docs/qr-app.png)
+
 Hai vai trò là **chế độ test**, không phải tài khoản đăng nhập hoặc hệ thống phân quyền theo danh tính. Quyền dữ liệu của từng phòng được bảo vệ riêng bằng khóa ngẫu nhiên: QR chỉ có khóa đọc; thiết bị tạo phòng giữ khóa ghi.
 
 ## Dùng bản triển khai
