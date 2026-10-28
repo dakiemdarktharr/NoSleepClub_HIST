@@ -1,4 +1,4 @@
-export interface Place { id: string; name: string; address?: string; lat: number; lon: number }
+export interface Place { id: string; name: string; address?: string; lat: number; lon: number; addressStatus?: 'pending' | 'resolved' | 'unavailable' }
 export type TravelMode = 'walk' | 'motorbike' | 'transit';
 export interface RoadRoute { coordinates: [number, number][]; meters: number; seconds: number; instructions: { text: string; meters: number; type?: number; streets?: string[]; exit?: number }[]; provider: string }
 export interface TransitStop extends Place { kind: 'bus' | 'metro' }

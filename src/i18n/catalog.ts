@@ -160,6 +160,19 @@ export const catalog = {
   waitEstimate: ["Estimated wait ≈ {n} min","예상 대기 약 {n}분","预计候车约{n}分钟","推定待ち時間約{n}分","Ожидание ≈ {n} мин","Chờ ước tính ≈ {n} phút"],
   assumedTiming: ["Some timings use default assumptions.","일부 시간은 기본 가정값입니다.","部分时间采用默认假设。","一部の時間は仮定値です。","Часть времени рассчитана по допущениям.","Một số thời gian dùng giả định mặc định."],
   publishedHours: ["Published service hours: {hours}","공시 운행 시간: {hours}","公布的运营时间：{hours}","公表運行時間：{hours}","Опубликованные часы работы: {hours}","Khung giờ công bố: {hours}"],
+  flatMap: ["Flat map","평면 지도","平面地图","平面地図","Плоская карта","Bản đồ phẳng"],
+  tiltedMap: ["Tilted map","기울어진 지도","倾斜地图","斜め表示","Наклонная карта","Bản đồ nghiêng"],
+  resetNorth: ["Face north","북쪽으로 정렬","朝向北方","北向きに戻す","Повернуть на север","Hướng về Bắc"],
+  mapTilesLoading: ["Loading streets…","도로를 불러오는 중…","正在加载街道…","道路を読み込み中…","Загрузка улиц…","Đang tải đường phố…"],
+  mapRecovering: ["Restoring the map…","지도를 복원하는 중…","正在恢复地图…","地図を復元中…","Восстановление карты…","Đang khôi phục bản đồ…"],
+  mapTilesFailed: ["Street map unavailable. Retry to reload it.","도로 지도를 불러올 수 없습니다. 다시 시도하세요.","街道地图暂不可用，请重试。","道路地図を取得できません。再試行してください。","Уличная карта недоступна. Попробуйте загрузить снова.","Chưa tải được nền đường phố. Thử tải lại bản đồ."],
+  mapUnsupported: ["This browser cannot render the map. Try an updated browser.","이 브라우저는 지도를 표시할 수 없습니다. 최신 브라우저를 사용하세요.","此浏览器无法绘制地图，请使用更新的浏览器。","このブラウザでは地図を表示できません。最新版をお試しください。","Браузер не поддерживает карту. Попробуйте обновлённый браузер.","Trình duyệt chưa hiển thị được bản đồ. Hãy thử trình duyệt mới hơn."],
+  findingAddress: ["Finding the pinned address…","핀 위치의 주소를 찾는 중…","正在查找标记位置的地址…","ピンの住所を検索中…","Поиск адреса метки…","Đang tìm địa chỉ tại pin…"],
+  addressUnavailable: ["Address unavailable; coordinates keep the exact pin location.","주소를 찾을 수 없습니다. 좌표는 핀의 정확한 위치를 유지합니다.","暂无地址；坐标保留标记的准确位置。","住所を取得できません。座標でピンの位置を保持します。","Адрес не найден; координаты сохраняют точное положение метки.","Chưa tìm được địa chỉ; tọa độ vẫn giữ đúng vị trí pin."],
+  nearPinnedAddress: ["Nearby address; the pin keeps your selected position.","가까운 주소입니다. 핀은 선택한 위치를 유지합니다.","显示附近地址；标记仍在所选位置。","近くの住所です。ピンは選択した位置のままです。","Адрес рядом с меткой; выбранная точка сохранена.","Địa chỉ gần pin; vị trí đã chọn được giữ nguyên."],
+  retry: ["Retry","다시 시도","重试","再試行","Повторить","Thử lại"],
+  zoomIn: ["Zoom in","확대","放大","拡大","Приблизить","Phóng to"],
+  zoomOut: ["Zoom out","축소","缩小","縮小","Отдалить","Thu nhỏ"],
 } as const satisfies Record<string, Row>;
 export type MessageKey = keyof typeof catalog;
 export type Params = Record<string, string | number>;

@@ -15,6 +15,8 @@ const Context = createContext<{
 }>({ locale: 'en', setLocale: () => {}, t: key => translate(key, 'en'), m: text => localizeMessage(text, 'en') });
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, update] = useState<Locale>(remembered);
+  // Register native font faces for the language chooser too; unicode ranges load only needed glyphs.
+  useEffect(() => { void Promise.allSettled(Object.values(fontLoads).map(load => load())); }, []);
   useEffect(() => {
     document.documentElement.lang = languageNames[locale].intl;
     document.documentElement.dataset.locale = locale;

@@ -54,7 +54,7 @@ flowchart TB
 | [vision.worker.ts](src/vision.worker.ts) | Backbone loading, embeddings, ORB extraction and geometric matching |
 | [fewshot.ts](src/fewshot.ts), [evidence.ts](src/evidence.ts), [recognition.ts](src/recognition.ts) | Classifier fitting/ranking, acceptance rules, quality checks and temporal confirmation |
 | [model-cache.ts](src/model-cache.ts), [shared.ts](src/shared.ts) | IndexedDB cache and shared feature/model types |
-| [MapsPanel.tsx](src/maps/MapsPanel.tsx), [transit.ts](src/maps/transit.ts) | Map interactions, route verification and transit search |
+| [MapsPanel.tsx](src/maps/MapsPanel.tsx), [MapCanvas.tsx](src/maps/MapCanvas.tsx), [transit.ts](src/maps/transit.ts) | Pitched vector map, pin addresses, route verification and transit search |
 | [i18n/](src/i18n/) | Six-language UI, progress/error localization and font selection |
 | [rpc.ts](server/rpc.ts), [validation.ts](server/validation.ts) | Authorization, upload lifecycle, quotas and input validation |
 | [db.ts](server/db.ts), [maps.ts](server/maps.ts) | MongoDB connection/indexes and cached map-provider requests |
@@ -153,7 +153,7 @@ All app operations use `POST /api/rpc` with a JSON `action`. Room operations als
 | `media.get`, `frames.get` | Read or write | Downloads video parts or feature pages |
 | `model.get` | Read or write | Loads the room's fitted classifier |
 | `model.save` | Write | Stores a classifier if its dataset version/references are still current |
-| `maps.search`, `maps.route` | Public; rate limited | Searches places or requests road routing |
+| `maps.search`, `maps.reverse`, `maps.route` | Public; rate limited | Search, nearby pin address or road routing |
 
 Read and write keys each contain 32 random bytes. MongoDB stores SHA-256 hashes; authorization compares them in constant time. The creator's browser retains the write key. Room QR links carry the read key in a URL fragment; the app stores it and removes the fragment from the visible URL. A room UUID alone grants no access. Losing browser storage can lose write access; account recovery is not implemented.
 
@@ -184,8 +184,8 @@ flowchart LR
   photon["Photon: search"]
   valhalla["Valhalla: roads"]
   snapshot["Transit JSON"]
-  tiles["HOT / OSM France"]
-  map -->|"Search and roads"| api
+  tiles["OpenFreeMap / HOT fallback"]
+  map -->|"Search, pin addresses, roads"| api
   map <-->|"Bus and metro"| planner
   map -->|"Map imagery"| tiles
   api <--> cache
@@ -197,6 +197,14 @@ flowchart LR
 [Open the rendered maps SVG](docs/architecture-2.svg) if your viewer does not render Mermaid. Location and route queries go to the relevant services; camera images do not. Tile requests also reveal the viewed map area to the tile provider.
 
 Users can search explicitly with the magnifier/Enter, type `latitude,longitude`, choose one of ten curated destinations, or place A/B pins. Pin controls support drag-and-drop and tap-then-place; existing markers are draggable. Editing an endpoint invalidates the previous route and any pending result. Geolocation permission is requested only by **My location**.
+
+The renderer is [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/API/classes/Map/), loaded with the map panel. The primary [OpenFreeMap Positron style](https://openfreemap.org/quick_start/) uses vector streets, local ink/paper background and water colors, and a true 42° camera pitch; HOT raster tiles are the fallback. **2D/3D** switches pitch, the compass resets north, and zoom buttons/pinch control zoom. Wheel zoom is disabled to avoid accidental zoom while scrolling. Camera interactions and pin screen positions use MapLibre projection/unprojection, not a CSS perspective transform. Route geometry remains `[latitude, longitude]` in application types and is converted to GeoJSON `[longitude, latitude]` at the renderer boundary.
+
+A dropped or dragged pin calls `maps.reverse`, a cached, region-bounded Photon reverse lookup. The input displays the nearby street address while the **exact selected coordinates remain the routing endpoint**. Provider results more than 250 m away and city-only results are rejected. Until resolution, or on failure, coordinates are shown instead of a fabricated address. Unique pin IDs prevent an older response from replacing a later pin; endpoint swaps retain the identity of a pending lookup. The interface labels these as nearby addresses, not exact surveyed entrances.
+
+Map rendering includes a self-hosted module worker, resize/visibility recovery, WebGL context-loss handling, a tile-stall watchdog, one automatic provider switch and bounded tile retries. A terminal failure leaves a stable retry control and preserves selected pins/routes. Browser HTTP caches are honored; there is no city prefetch or offline tile download. The canvas has no CSS saturation/blur filter. CSP allows only the selected map hosts for fetch/images and keeps font/script restrictions in place.
+
+[siteModels.ts](src/maps/siteModels.ts) provides stable landmark anchors, metre-to-Mercator placement and a `renderingMode: '3d'` custom-layer attachment helper. Future authored models can share MapLibre's camera/depth buffer via its [custom layer interface](https://maplibre.org/maplibre-gl-js/docs/API/interfaces/CustomLayerInterface/). **No landmark meshes, measured 3D building models or terrain elevations ship in this release.** Devices need WebGL 2; unsupported renderers show an explicit message.
 
 The curated records in [landmarks.ts](src/maps/landmarks.ts) distinguish the city museum at 65 Lý Tự Trọng, the Tuệ Thành/Thiên Hậu temple in Cholon, and the Bến Dược entrance for Củ Chi. Củ Chi is marked as a separate excursion; the cathedral pin is an exterior viewpoint. A map coordinate does not guarantee an open entrance, and the ten sites are not proposed as one walk.
 
@@ -248,15 +256,15 @@ Each fresh entry offers English, Vietnamese, Korean, Simplified Chinese, Japanes
 
 | Language | Display / body fonts |
 | --- | --- |
-| English and Vietnamese | Phudu / Be Vietnam Pro, with Vietnamese glyphs |
+| English and Vietnamese | Noto Serif Variable, including Vietnamese glyphs |
 | Korean | Noto Serif KR Variable |
 | Simplified Chinese | Noto Serif SC Variable |
 | Japanese | Noto Serif JP Variable |
-| Russian | Oswald / PT Sans, including Cyrillic |
+| Russian | Noto Serif Variable, including Cyrillic |
 
-CJK/Cyrillic font CSS loads on selection. Catalog checks cover every locale and interpolation parameter. Vietnamese runtime messages use registered source templates; unexpected messages still receive a safe localized fallback. Footage labels, street/stop names and line headsigns retain their source proper names. Map tile text and browser permission prompts are outside the app's translation catalog.
+All typefaces are self-hosted. CJK font CSS is registered at entry so native language names also use the selected design family; unicode-range subsets load only for glyphs that are displayed. Noto Serif supplies Latin/Vietnamese/Cyrillic; language-specific Noto Serif KR/SC/JP covers the other writing systems. Catalog checks cover every locale and interpolation parameter. Vietnamese runtime messages use registered source templates; unexpected messages still receive a safe localized fallback. Footage labels, street/stop names and line headsigns retain their source proper names. Map tile text and browser permission prompts are outside the app's translation catalog.
 
-The paper/ink interface uses editable SVG ornaments, including a temporary dragon recreated from the user's sketch. Camera occupies most of the workspace; library, QR and evaluation use a focus-trapped drawer. Mobile inputs are at least 16 px and main controls target 44 px. Reduced motion bypasses the animated curtains/typewriter. See the linked audits for tested viewports and the limits of synthetic camera tests.
+The paper/ink interface uses a serif newspaper type hierarchy with condensed heavy headlines and quieter reading text. Four [editable native SVG ornaments](public/art/README.md)—dragon, lantern, river pavilion and lotus compass—were recreated from the user-requested Canva concept. The connector produced raster concept art; these SVGs are manually redrawn paths, not Canva SVG exports. Camera occupies most of the workspace; library, QR and evaluation use a focus-trapped drawer. Mobile inputs are at least 16 px and main controls target 44 px. Reduced motion bypasses the animated curtains/typewriter. See the linked audits for tested viewports and the limits of synthetic camera tests.
 
 ## Deployment and troubleshooting
 
@@ -264,7 +272,7 @@ GitHub `main` is connected to Vercel project `nosleepclub-hist`. Builds output `
 
 `MONGODB_URI` is a sensitive production server variable. Protected previews do not receive that credential. Atlas M0 is in the separate `NoSleepClub_HIST` test project with a database-scoped read/write user. The owner approved `0.0.0.0/0` network access for this test because Vercel egress IPs vary; TLS and credentials remain required.
 
-CSP limits scripts/fonts to self and allows the model-delivery hosts. OpenCV requires `unsafe-eval` only in its worker policy. Framing and MIME sniffing are disabled; camera/geolocation are self-only and microphone access is denied. Room-key leakage or compromised browser storage can expose that room. Identity-based accounts, key recovery, an operator console and production service guarantees are not implemented.
+CSP limits scripts/fonts to self and allows the model-delivery and selected map hosts. OpenCV requires `unsafe-eval` only in its worker policy. Framing and MIME sniffing are disabled; camera/geolocation are self-only and microphone access is denied. Room-key leakage or compromised browser storage can expose that room. Identity-based accounts, key recovery, an operator console and production service guarantees are not implemented.
 
 | Symptom | Check |
 | --- | --- |
@@ -281,4 +289,4 @@ CSP limits scripts/fonts to self and allows the model-delivery hosts. OpenCV req
 * [Valhalla API](https://valhalla.github.io/valhalla/api/route/api-reference/), [Photon](https://github.com/komoot/photon), [OSM attribution](https://www.openstreetmap.org/copyright), [OSM France](https://www.openstreetmap.fr/)
 * [Technical research](docs/research.md), [recognition validation](docs/validation.md), [five-second audit](docs/audit-five-second.md), [map/UI audit](docs/audit-indochine-maps.md), [localization audit](docs/audit-localization.md), [translation/motion review](docs/translation-review.md), [Vietnamese and README verification](docs/audit-vietnamese-readme.md)
 
-Historical audits describe the versions they tested. Current behavior is defined by the code; synthetic tests do not establish real-world recognition accuracy or current transit operation.
+The [typography and map audit](docs/audit-map-redesign.md) covers font glyph rendering, pin-address races, pitched-map interactions, provider failure and graphics-context recovery. Historical audits describe the versions they tested. Current behavior is defined by the code; synthetic tests do not establish real-world recognition accuracy or current transit operation.

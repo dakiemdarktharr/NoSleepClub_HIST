@@ -42,7 +42,7 @@ async function footageFor(db: Db, roomId: string, value: unknown) {
 export async function dispatch(db: Db, req: Request, input: unknown): Promise<unknown> {
   const payload = z.record(z.string(), z.unknown()).parse(input);
   const action = z.string().max(40).parse(payload.action);
-  if (action === 'maps.search' || action === 'maps.route') return mapsAction(db, req, payload);
+  if (action === 'maps.search' || action === 'maps.reverse' || action === 'maps.route') return mapsAction(db, req, payload);
   if (action === 'workspace.create') {
     const address = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'local').split(',')[0].trim();
     const bucket = hash(address + ':' + Math.floor(Date.now() / 3600000));

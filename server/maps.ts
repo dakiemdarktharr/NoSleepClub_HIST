@@ -3,6 +3,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Db } from 'mongodb';
 import { z } from 'zod';
 import { decodePolyline, distance } from '../src/maps/geo.js';
+import { pinnedAddress } from '../src/maps/address.js';
 import type { Place, RoadRoute } from '../src/maps/types.js';
 const agent = 'NoSleepClub-HIST/0.2 (+https://github.com/dakiemdarktharr/NoSleepClub_HIST)';
 const point = z.object({ lat: z.number().finite().min(10.25).max(11.4), lon: z.number().finite().min(106.15).max(107.4) });
@@ -31,6 +32,17 @@ export async function mapsAction(db: Db, req: IncomingMessage, payload: Record<s
   const bucket = createHash('sha256').update('maps:' + address + ':' + Math.floor(Date.now() / 3600000)).digest('hex');
   const count = await db.collection('limits').findOneAndUpdate({ bucket }, { $inc: { count: 1 }, $setOnInsert: { expiresAt: new Date(Date.now() + 7200000) } }, { upsert: true, returnDocument: 'after' });
   if ((count?.count || 0) > 150) throw new MapsError(429, 'Đã dùng nhiều lượt bản đồ. Vui lòng thử lại sau.');
+  if (payload.action === 'maps.reverse') {
+    const location = point.parse(payload.point);
+    return { address: await cached<string | null>(db, JSON.stringify(['reverse-photon-v1', location]), 'photon', async () => {
+      const params = new URLSearchParams({ lat: String(location.lat), lon: String(location.lon), radius: '0.15', limit: '1' });
+      const response = await fetch('https://photon.komoot.io/reverse?' + params, { headers: { 'User-Agent': agent }, signal: AbortSignal.timeout(10000) }).catch(() => { throw new MapsError(503, 'Chưa kết nối được dịch vụ địa điểm. Thử lại hoặc nhập tọa độ.'); });
+      if (!response.ok) throw new MapsError(503, 'Chưa kết nối được dịch vụ địa điểm. Thử lại hoặc nhập tọa độ.');
+      const text = z.string().max(300).optional();
+      const data = z.object({ features: z.array(z.object({ properties: z.object({ name: text, housenumber: z.union([z.string().max(100), z.number()]).optional(), street: text, district: text, locality: text, city: text, county: text, country: text }), geometry: z.object({ coordinates: z.tuple([z.number().finite(), z.number().finite()]) }) })).max(1) }).parse(await response.json());
+      return pinnedAddress(data.features[0], location);
+    }) };
+  }
   if (payload.action === 'maps.search') {
     const query = z.string().trim().min(2).max(160).parse(payload.query);
     return { places: await cached<Place[]>(db, 'search-photon-v1:' + query.toLocaleLowerCase('vi'), 'photon', async () => {
