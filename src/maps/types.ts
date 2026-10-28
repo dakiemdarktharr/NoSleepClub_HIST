@@ -1,6 +1,6 @@
 export interface Place { id: string; name: string; address?: string; lat: number; lon: number }
 export type TravelMode = 'walk' | 'motorbike' | 'transit';
-export interface RoadRoute { coordinates: [number, number][]; meters: number; seconds: number; instructions: { text: string; meters: number }[]; provider: string }
+export interface RoadRoute { coordinates: [number, number][]; meters: number; seconds: number; instructions: { text: string; meters: number; type?: number; streets?: string[]; exit?: number }[]; provider: string }
 export interface TransitStop extends Place { kind: 'bus' | 'metro' }
 export interface TransitLine { id: string; code: string; name: string; headsign: string; kind: 'bus' | 'metro'; stops: string[]; shape: [number, number][] }
 export interface TransitNetwork { updatedAt: string; sources: { name: string; url: string }[]; stops: TransitStop[]; lines: TransitLine[] }

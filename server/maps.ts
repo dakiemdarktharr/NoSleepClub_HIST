@@ -45,13 +45,13 @@ export async function mapsAction(db: Db, req: IncomingMessage, payload: Record<s
   const origin = point.parse(payload.origin), destination = point.parse(payload.destination);
   const mode = z.enum(['walk', 'motorbike']).parse(payload.mode);
   if (distance(origin, destination) > 60000) throw new MapsError(400, 'Bản thử nghiệm hỗ trợ hành trình trong khu vực TP.HCM, tối đa 60 km giữa hai điểm.');
-  const key = JSON.stringify(['road-v1', mode, origin, destination]);
+  const key = JSON.stringify(['road-v2-structured', mode, origin, destination]);
   return { route: await cached<RoadRoute>(db, key, 'valhalla', async () => {
     const costing = mode === 'walk' ? 'pedestrian' : 'motor_scooter';
-    const body = { locations: [origin, destination], costing, costing_options: { [costing]: { shortest: true, ...(mode === 'motorbike' ? { disable_hierarchy_pruning: true } : {}) } }, units: 'kilometers', language: 'vi-VN' };
+    const body = { locations: [origin, destination], costing, costing_options: { [costing]: { shortest: true, ...(mode === 'motorbike' ? { disable_hierarchy_pruning: true } : {}) } }, units: 'kilometers', language: 'en-US' };
     const response = await fetch('https://valhalla1.openstreetmap.de/route?json=' + encodeURIComponent(JSON.stringify(body)), { headers: { 'User-Agent': agent }, signal: AbortSignal.timeout(14000) }).catch(() => { throw new MapsError(503, 'Chưa kết nối được bộ tìm đường. Vui lòng thử lại.'); });
     if (!response.ok) throw new MapsError(503, 'Chưa tìm được đường phù hợp với phương tiện này. Hãy chọn lại điểm trên đường.');
-    const data = z.object({ trip: z.object({ summary: z.object({ length: z.number().nonnegative(), time: z.number().nonnegative() }), legs: z.array(z.object({ shape: z.string().max(500000), maneuvers: z.array(z.object({ instruction: z.string().max(1000), length: z.number().nonnegative() })).max(1000) })).min(1).max(2) }) }).parse(await response.json());
-    return { coordinates: data.trip.legs.flatMap(leg => decodePolyline(leg.shape)), meters: Math.round(data.trip.summary.length * 1000), seconds: Math.round(data.trip.summary.time), instructions: data.trip.legs.flatMap(leg => leg.maneuvers.map(item => ({ text: item.instruction, meters: Math.round(item.length * 1000) }))), provider: 'Valhalla / OpenStreetMap' };
+    const data = z.object({ trip: z.object({ summary: z.object({ length: z.number().nonnegative(), time: z.number().nonnegative() }), legs: z.array(z.object({ shape: z.string().max(500000), maneuvers: z.array(z.object({ instruction: z.string().max(1000), length: z.number().nonnegative(), type: z.number().int().min(0).max(100), street_names: z.array(z.string().max(300)).max(30).optional(), roundabout_exit_count: z.number().int().nonnegative().optional() })).max(1000) })).min(1).max(2) }) }).parse(await response.json());
+    return { coordinates: data.trip.legs.flatMap(leg => decodePolyline(leg.shape)), meters: Math.round(data.trip.summary.length * 1000), seconds: Math.round(data.trip.summary.time), instructions: data.trip.legs.flatMap(leg => leg.maneuvers.map(item => ({ text: item.instruction, meters: Math.round(item.length * 1000), type: item.type, streets: item.street_names, exit: item.roundabout_exit_count }))), provider: 'Valhalla / OpenStreetMap' };
   }) };
 }

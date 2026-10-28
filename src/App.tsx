@@ -6,6 +6,7 @@ import { currentModel, selectTrainingFrames, sourceIdsFor } from './fewshot';
 import { readModelCache, writeModelCache } from './model-cache';
 import { CAPTURE_SECONDS, MAX_VIDEO_BYTES, type CapturedFrame, type Feature, type Footage, type Mode, type Prediction, type Room, type TrainedClassifier } from './shared';
 import Icon from './ui/Icon';
+import { LanguageChoices, LanguageGate, useLocale } from './i18n';
 import Modal from './ui/Modal';
 import { CloudDragon, InkLandscape, Lantern } from './ui/Ornament';
 import { ChangingTitle, useButtonMotion, useCurtain } from './ui/Motion';
@@ -20,6 +21,8 @@ function saveBlob(blob: Blob, name: string) {
   link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 export default function App() {
+  const { t, m } = useLocale();
+  const [languageChosen, setLanguageChosen] = useState(false);
   const [mode, setMode] = useState<Mode | null>(null);
   const [room, setRoom] = useState<Room | null>(() => restoreRoom());
   const [footages, setFootages] = useState<Footage[]>([]);
@@ -355,63 +358,64 @@ export default function App() {
     document.querySelector<HTMLButtonElement>('.role-button')?.focus();
   }
   const visibleStatus = busy || !modelReady ? status : mode === 'dev' ? status : '';
+  if (!languageChosen) return <LanguageGate onChoose={() => setLanguageChosen(true)}/>;
   return <>
     <div className={`app-shell ${mode ? 'in-workspace' : 'at-title'}`}>
       {!mode ? <main className="title-screen">
         <div className="tile-border" aria-hidden="true"/>
-        <div className="title-masthead"><span>NoSleepClub</span><span>HIST</span><span>Sài Gòn</span></div>
+        <div className="title-masthead"><span>NoSleepClub</span><span>{t('city')}</span></div>
         <Lantern/>
         <div className="title-center"><CloudDragon className="title-ornament"/><h1><ChangingTitle/></h1>
-          <div className="role-choices" aria-label="Chọn vai trò">
-            <button className="role-button user-role" disabled={busy || transitioning} onClick={event => void transition('iris', () => enter('user'), event)}><span>User</span><Icon name="chevron"/></button>
-            <button className="role-button dev-role" disabled={busy || transitioning} onClick={event => void transition('iris', () => enter('dev'), event)}><span>Dev</span><Icon name="chevron"/></button>
+          <div className="role-choices" aria-label={t('chooseRole')}>
+            <button className="role-button user-role" disabled={busy || transitioning} onClick={event => void transition('iris', () => enter('user'), event)}><span>{t('user')}</span><Icon name="chevron"/></button>
+            <button className="role-button dev-role" disabled={busy || transitioning} onClick={event => void transition('iris', () => enter('dev'), event)}><span>{t('dev')}</span><Icon name="chevron"/></button>
           </div>
-          {busy && <p className="title-feedback" role="status">Đang mở phiên…</p>}
-          {error && <p className="title-feedback error-text" role="alert">{error}</p>}
+          {busy && <p className="title-feedback" role="status">{t('opening')}</p>}
+          {error && <p className="title-feedback error-text" role="alert">{m(error)}</p>}
         </div>
         <InkLandscape/><div className="title-bottom-rule" aria-hidden="true"/>
       </main> : <>
-        <header className="app-header"><div className="header-start"><button className="icon-button" aria-label="Về màn chọn vai trò" disabled={busy || recording || !!draft || transitioning} onClick={() => void leave()}><Icon name="back"/></button><span className="wordmark">HIST</span><span className="role-indicator">{mode === 'dev' ? 'Dev' : 'User'} <small>Test</small></span></div>
-          {mode === 'user' && <nav className="view-tabs" aria-label="Chức năng"><button aria-pressed={tab === 'camera'} onClick={() => setTab('camera')}><Icon name="camera"/><span>Camera</span></button><button aria-pressed={tab === 'maps'} onClick={() => { stopCamera(); setTab('maps'); }}><Icon name="map"/><span>Bản đồ</span></button></nav>}
-          <button className="icon-button library-toggle" aria-label="Mở thư viện và công cụ" disabled={recording || busy || !!draft} onClick={() => setLibraryOpen(true)}><Icon name="menu"/></button>
+        <header className="app-header"><div className="header-start"><button className="icon-button" aria-label={t('backRoles')} disabled={busy || recording || !!draft || transitioning} onClick={() => void leave()}><Icon name="back"/></button><span className="wordmark">HIST</span><span className="role-indicator">{t(mode === 'dev' ? 'dev' : 'user')} <small>{t('test')}</small></span></div>
+          {mode === 'user' && <nav className="view-tabs" aria-label={t('tools')}><button aria-pressed={tab === 'camera'} onClick={() => setTab('camera')}><Icon name="camera"/><span>{t('camera')}</span></button><button aria-pressed={tab === 'maps'} onClick={() => { stopCamera(); setTab('maps'); }}><Icon name="map"/><span>{t('maps')}</span></button></nav>}
+          <button className="icon-button library-toggle" aria-label={t('tools')} disabled={recording || busy || !!draft} onClick={() => setLibraryOpen(true)}><Icon name="menu"/></button>
         </header>
         <main className="workspace-main">
-          <section className="camera-panel" hidden={tab !== 'camera'} aria-label="Camera trực tiếp">
+          <section className="camera-panel" hidden={tab !== 'camera'} aria-label={t('cameraRegion')}>
             <div ref={viewfinder} className={`viewfinder ${recording ? 'recording' : ''}`}>
               <video ref={video} autoPlay muted playsInline hidden={!camera}/>
-              {!camera && <div className="camera-placeholder"><CloudDragon className="placeholder-ornament"/><h1>{mode === 'dev' ? 'Ghi lại một nơi.' : 'Nhìn lại một nơi.'}</h1><p>{mode === 'dev' ? 'Một khu vực. Năm giây.' : room ? `${learnedCount || labels.size} khu vực đã học` : 'Nhập link hoặc quét QR phòng để dùng bộ mẫu.'}</p><button className="primary camera-start" disabled={busy} onClick={() => void openCamera()}><Icon name="camera"/>Bật camera</button></div>}
-              {camera && <div className="camera-topline"><span className={`live-label ${recording ? 'is-recording' : ''}`}><i/>{recording ? `${seconds(elapsed)} / 00:05` : 'Trực tiếp'}</span><div className="camera-actions"><button className="glass-button" aria-label="Đổi camera trước hoặc sau" disabled={recording || busy || !!draft} onClick={() => { facing.current = facing.current === 'environment' ? 'user' : 'environment'; void openCamera(); }}>↻</button><button className="glass-button" aria-label="Tắt camera" disabled={recording || busy} onClick={stopCamera}><Icon name="close"/></button></div></div>}
-              {mode === 'user' && camera && <div className={`recognition-result ${prediction.label ? 'matched' : ''}`} role="status" aria-live="polite" aria-atomic="true"><span>{prediction.label ? 'Đang ở' : 'Chưa xác nhận'}</span><strong>{prediction.label || '...'}</strong>{!prediction.label && <p>{prediction.reason}</p>}</div>}
-              {mode === 'dev' && camera && <div className="capture-controls"><div className="capture-side">{recording ? <><strong>{sampleCount}</strong><span>frame rõ</span></> : <span>5 giây</span>}</div><button className={`capture-button ${recording ? 'is-recording' : ''}`} aria-label={recording ? 'Dừng quay' : 'Quay mẫu 5 giây'} disabled={busy || !!draft} onClick={recording ? stopRecording : startRecording}><span/></button><div className="capture-side"><span>{recording ? 'Dừng' : 'Quay mẫu'}</span></div></div>}
+              {!camera && <div className="camera-placeholder"><CloudDragon className="placeholder-ornament"/><h1>{mode === 'dev' ? t('captureTitle') : t('recognizeTitle')}</h1><p>{mode === 'dev' ? t('fiveSecondHint') : room ? t('learnedPlaces', {n: learnedCount || labels.size}) : t('joinHint')}</p><button className="primary camera-start" disabled={busy} onClick={() => void openCamera()}><Icon name="camera"/>{t('startCamera')}</button></div>}
+              {camera && <div className="camera-topline"><span className={`live-label ${recording ? 'is-recording' : ''}`}><i/>{recording ? `${seconds(elapsed)} / 00:05` : t('live')}</span><div className="camera-actions"><button className="glass-button" aria-label={t('switchCamera')} disabled={recording || busy || !!draft} onClick={() => { facing.current = facing.current === 'environment' ? 'user' : 'environment'; void openCamera(); }}>↻</button><button className="glass-button" aria-label={t('stopCamera')} disabled={recording || busy} onClick={stopCamera}><Icon name="close"/></button></div></div>}
+              {mode === 'user' && camera && <div className={`recognition-result ${prediction.label ? 'matched' : ''}`} role="status" aria-live="polite" aria-atomic="true"><span>{prediction.label ? t('locatedAt') : t('unconfirmed')}</span><strong>{prediction.label || '...'}</strong>{!prediction.label && <p>{m(prediction.reason)}</p>}</div>}
+              {mode === 'dev' && camera && <div className="capture-controls"><div className="capture-side">{recording ? <><span>{t('clearFrames', {n: sampleCount})}</span></> : <span>{t('secondsFive')}</span>}</div><button className={`capture-button ${recording ? 'is-recording' : ''}`} aria-label={recording ? t('stopRecording') : t('recordFive')} disabled={busy || !!draft} onClick={recording ? stopRecording : startRecording}><span/></button><div className="capture-side"><span>{recording ? t('stop') : t('record')}</span></div></div>}
             </div>
-            <div className="camera-status"><span className="quality-label"><i className={modelReady ? 'ready' : ''}/>{!modelReady ? status : camera ? qualityLabel : 'Bộ nhận diện sẵn sàng'}</span>{visibleStatus && <span className="process-status" role="status">{busy && <i className="spinner"/>}{visibleStatus}</span>}</div>
+            <div className="camera-status"><span className="quality-label"><i className={modelReady ? 'ready' : ''}/>{!modelReady ? m(status) : camera ? m(qualityLabel) : t('modelReady')}</span>{visibleStatus && <span className="process-status" role="status">{busy && <i className="spinner"/>}{m(visibleStatus)}</span>}</div>
           </section>
-          {mode === 'user' && tab === 'maps' && <Suspense fallback={<div className="map-loading" role="status">Đang mở bản đồ…</div>}><MapsPanel/></Suspense>}
-          {error && <div className="error-toast" role="alert"><span>{error}</span><button className="icon-button" aria-label="Đóng thông báo lỗi" onClick={() => setError('')}><Icon name="close"/></button></div>}
+          {mode === 'user' && tab === 'maps' && <Suspense fallback={<div className="map-loading" role="status">{t('openingMaps')}</div>}><MapsPanel/></Suspense>}
+          {error && <div className="error-toast" role="alert"><span>{m(error)}</span><button className="icon-button" aria-label={t('closeError')} onClick={() => setError('')}><Icon name="close"/></button></div>}
         </main>
       </>}
     </div>
-    {libraryOpen && <Modal title="Thư viện" drawer onClose={() => setLibraryOpen(false)} locked={busy}>
-      <div className="library-toolbar"><p>{referenceClips.length} footage tham chiếu</p><button onClick={() => { setLibraryOpen(false); setShowQR(true); }}><Icon name="qr"/>QR phòng</button></div>
-      {!room && <form className="join-form" onSubmit={join}><label htmlFor="join-link">Link phòng</label><div className="input-action"><input id="join-link" type="url" value={joinLink} onChange={event => setJoinLink(event.target.value)} placeholder="Dán link từ Dev" required/><button type="submit" aria-label="Mở phòng"><Icon name="chevron"/></button></div></form>}
-      {!footages.length && <div className="empty-library"><Icon name="record" size={32}/><h3>Chưa có khu vực nào</h3><p>{mode === 'dev' ? 'Bật camera, quay 5 giây rồi đặt tên.' : 'Mở QR phòng từ Dev để nạp bộ mẫu.'}</p></div>}
-      <div className="footage-list">{footages.map(item => <article className="footage" key={item.id}><img src={item.cover} alt={`Khung hình ${item.label}`}/><div className="footage-copy"><h3>{item.label}</h3><p>{seconds(item.duration)} / {item.frameCount} frame</p><small>{item.status === 'pending' ? 'Chưa lưu xong' : item.kind === 'validation' ? 'Kiểm thử riêng' : item.background ? 'Cảnh khác' : 'Tham chiếu'}</small>{mode === 'dev' && <div className="footage-actions">{item.status === 'ready' && <button disabled={busy} onClick={() => void download(item)}>Tải video</button>}<button disabled={busy} onClick={() => void removeFootage(item)}>Xóa</button></div>}</div></article>)}</div>
-      {mode === 'user' && room && <button className="secondary wide" disabled={busy} onClick={() => { setBusy(true); startRecognition(true).catch(fail).finally(() => setBusy(false)); }}>Cập nhật bộ mẫu</button>}
-      {mode === 'dev' && <details className="advanced-tools"><summary>Huấn luyện & kiểm thử</summary><p>Dùng lại footage đã lưu hoặc kiểm tra bằng video riêng.</p><button className="secondary wide" disabled={busy || !referenceClips.some(item => item.frameCount > 0)} onClick={() => void trainSaved()}>Huấn luyện lại</button><button className="secondary wide" disabled={busy || !readyClips.some(item => item.kind === 'validation')} onClick={() => void evaluate()}>Kiểm thử video riêng</button>{report && <p className="evaluation-report">{report}</p>}<p>{sampleCount} frame rõ, {skipped} frame bỏ qua trong lượt quay gần nhất.</p></details>}
-      <p className="drawer-status" role="status">{status}</p>
-      <a className="source-link" href="https://github.com/dakiemdarktharr/NoSleepClub_HIST" target="_blank" rel="noreferrer">Mã nguồn</a>
+    {libraryOpen && <Modal title={t('library')} drawer onClose={() => setLibraryOpen(false)} locked={busy}>
+      <details className="language-settings"><summary>{t('language')}</summary><LanguageChoices/></details><div className="library-toolbar"><p>{t('referenceCount', {n: referenceClips.length})}</p><button onClick={() => { setLibraryOpen(false); setShowQR(true); }}><Icon name="qr"/>{t('roomQR')}</button></div>
+      {!room && <form className="join-form" onSubmit={join}><label htmlFor="join-link">{t('roomLink')}</label><div className="input-action"><input id="join-link" type="url" onInvalid={event=>event.currentTarget.setCustomValidity(t('validRoomLink'))} value={joinLink} onChange={event => {event.currentTarget.setCustomValidity('');setJoinLink(event.target.value);}} placeholder={t('pasteLink')} required/><button type="submit" aria-label={t('openRoom')}><Icon name="chevron"/></button></div></form>}
+      {!footages.length && <div className="empty-library"><Icon name="record" size={32}/><h3>{t('noPlaces')}</h3><p>{mode === 'dev' ? t('noPlacesDev') : t('noPlacesUser')}</p></div>}
+      <div className="footage-list">{footages.map(item => <article className="footage" key={item.id}><img src={item.cover} alt={t('coverAlt', {name: item.label})}/><div className="footage-copy"><h3>{item.label}</h3><p>{seconds(item.duration)} / {t('frames', {n: item.frameCount})}</p><small>{item.status === 'pending' ? t('pendingUpload') : item.kind === 'validation' ? t('validation') : item.background ? t('background') : t('reference')}</small>{mode === 'dev' && <div className="footage-actions">{item.status === 'ready' && <button disabled={busy} onClick={() => void download(item)}>{t('downloadVideo')}</button>}<button disabled={busy} onClick={() => void removeFootage(item)}>{t('delete')}</button></div>}</div></article>)}</div>
+      {mode === 'user' && room && <button className="secondary wide" disabled={busy} onClick={() => { setBusy(true); startRecognition(true).catch(fail).finally(() => setBusy(false)); }}>{t('refreshReferences')}</button>}
+      {mode === 'dev' && <details className="advanced-tools"><summary>{t('trainTest')}</summary><p>{t('trainTestHint')}</p><button className="secondary wide" disabled={busy || !referenceClips.some(item => item.frameCount > 0)} onClick={() => void trainSaved()}>{t('retrain')}</button><button className="secondary wide" disabled={busy || !readyClips.some(item => item.kind === 'validation')} onClick={() => void evaluate()}>{t('evaluate')}</button>{report && <p className="evaluation-report">{m(report)}</p>}<p>{t('lastCapture', {clear: sampleCount, skipped})}</p></details>}
+      <p className="drawer-status" role="status">{m(status)}</p>
+      <a className="source-link" href="https://github.com/dakiemdarktharr/NoSleepClub_HIST" target="_blank" rel="noreferrer">{t('sourceCode')}</a>
     </Modal>}
-    {draft && <Modal title="Đặt tên khu vực" onClose={() => { setDraft(null); setError(''); }} locked={busy}>
-      <p className="draft-meta">{seconds(draft.duration)} / {sizeText(draft.blob.size)} / {draft.captured.length} frame rõ</p>
-      <form onSubmit={event => void submitFootage(event)} className="draft-form"><label htmlFor="place-name">Tên khu vực</label><input autoFocus id="place-name" placeholder="Bàn làm việc" maxLength={80} value={label} onChange={event => setLabel(event.target.value)} required disabled={busy || !!draft.savedId}/>
-        <details className="draft-options"><summary>Tùy chọn footage</summary><label htmlFor="footage-kind">Sử dụng</label><select id="footage-kind" value={kind} onChange={event => setKind(event.target.value as typeof kind)} disabled={busy || !!draft.savedId}><option value="reference">Mẫu nhận diện</option><option value="validation">Kiểm thử riêng</option></select><label className="checkbox-label"><input type="checkbox" checked={background} onChange={event => setBackground(event.target.checked)} disabled={busy || !!draft.savedId}/>Cảnh khác, dùng để từ chối nhận diện</label></details>
-        {!draft.captured.length && <p className="warning">Chưa có frame rõ. Giữ máy ổn định và quay lại ở nơi đủ sáng.</p>}
-        <button className="primary wide" disabled={busy || !label.trim() || !draft.captured.length || draft.blob.size > MAX_VIDEO_BYTES}>{busy ? <><i className="spinner"/>Đang học…</> : draft.savedId ? 'Thử huấn luyện lại' : 'Lưu & huấn luyện'}</button>
+    {draft && <Modal title={t('namePlace')} onClose={() => { setDraft(null); setError(''); }} locked={busy}>
+      <p className="draft-meta">{seconds(draft.duration)} / {sizeText(draft.blob.size)} / {t('clearFrames', {n: draft.captured.length})}</p>
+      <form onSubmit={event => void submitFootage(event)} className="draft-form"><label htmlFor="place-name">{t('placeName')}</label><input autoFocus id="place-name" onInvalid={event=>event.currentTarget.setCustomValidity(t('requiredName'))} placeholder={t('deskExample')} maxLength={80} value={label} onChange={event => {event.currentTarget.setCustomValidity('');setLabel(event.target.value);}} required disabled={busy || !!draft.savedId}/>
+        <details className="draft-options"><summary>{t('footageOptions')}</summary><label htmlFor="footage-kind">{t('useFor')}</label><select id="footage-kind" value={kind} onChange={event => setKind(event.target.value as typeof kind)} disabled={busy || !!draft.savedId}><option value="reference">{t('reference')}</option><option value="validation">{t('validation')}</option></select><label className="checkbox-label"><input type="checkbox" checked={background} onChange={event => setBackground(event.target.checked)} disabled={busy || !!draft.savedId}/>{t('backgroundCheck')}</label></details>
+        {!draft.captured.length && <p className="warning">{t('noClearFrames')}</p>}
+        <button className="primary wide" disabled={busy || !label.trim() || !draft.captured.length || draft.blob.size > MAX_VIDEO_BYTES}>{busy ? <><i className="spinner"/>{t('learning')}</> : draft.savedId ? t('retryTrain') : t('saveTrain')}</button>
       </form>
-      <div className="modal-actions"><button disabled={busy} onClick={() => saveBlob(draft.blob, `footage.${draft.blob.type.includes('mp4') ? 'mp4' : 'webm'}`)}>Tải video</button><button disabled={busy} onClick={() => { setDraft(null); setError(''); }}>{draft.savedId ? 'Đóng' : 'Bỏ video'}</button></div>
-      {busy && <p className="training-status" role="status">{status}</p>}{error && <p className="warning" role="alert">{error}</p>}
+      <div className="modal-actions"><button disabled={busy} onClick={() => saveBlob(draft.blob, `footage.${draft.blob.type.includes('mp4') ? 'mp4' : 'webm'}`)}>{t('downloadVideo')}</button><button disabled={busy} onClick={() => { setDraft(null); setError(''); }}>{draft.savedId ? t('close') : t('discardVideo')}</button></div>
+      {busy && <p className="training-status" role="status">{m(status)}</p>}{error && <p className="warning" role="alert">{m(error)}</p>}
     </Modal>}
-    {showQR && <Modal title={room ? 'Mở cùng bộ mẫu' : 'Mở HIST'} onClose={() => setShowQR(false)}><p>Quét bằng camera điện thoại. QR chỉ cấp quyền xem và nhận diện.</p>{qrImage && <img className="qr-image" src={qrImage} alt="Mã QR mở HIST"/>}<div className="qr-actions"><button onClick={() => { navigator.clipboard?.writeText(link).then(() => setStatus('Đã sao chép link.')).catch(fail); }}>Sao chép link</button><button disabled={!qrImage} onClick={() => { const a = document.createElement('a'); a.href = qrImage; a.download = 'HIST-QR.png'; a.click(); }}>Tải QR</button></div></Modal>}
+    {showQR && <Modal title={room ? t('shareReferences') : t('openApp')} onClose={() => setShowQR(false)}><p>{t('qrHint')}</p>{qrImage && <img className="qr-image" src={qrImage} alt={t('qrAlt')}/>}<div className="qr-actions"><button onClick={() => { navigator.clipboard?.writeText(link).then(() => setStatus('Đã sao chép link.')).catch(fail); }}>{t('copyLink')}</button><button disabled={!qrImage} onClick={() => { const a = document.createElement('a'); a.href = qrImage; a.download = 'HIST-QR.png'; a.click(); }}>{t('downloadQR')}</button></div></Modal>}
     {curtains}
   </>;
 }

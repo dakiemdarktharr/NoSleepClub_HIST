@@ -1,0 +1,9 @@
+@import '@fontsource/oswald/cyrillic-600.css';
+@import '@fontsource/oswald/latin-600.css';
+@import '@fontsource/oswald/cyrillic-700.css';
+@import '@fontsource/oswald/latin-700.css';
+@import '@fontsource/pt-sans/cyrillic-400.css';
+@import '@fontsource/pt-sans/latin-400.css';
+@import '@fontsource/pt-sans/cyrillic-700.css';
+@import '@fontsource/pt-sans/latin-700.css';
+html[data-locale=ru]{--display:'Oswald',sans-serif;--body:'PT Sans',sans-serif}

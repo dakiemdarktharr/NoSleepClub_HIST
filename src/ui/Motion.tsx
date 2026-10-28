@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { animate, hover, press, stagger } from 'motion';
 import { CloudDragon } from './Ornament';
+import { useLocale } from '../i18n';
 export function useButtonMotion(dependency: unknown) {
   useEffect(() => {
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -19,19 +20,39 @@ export function useButtonMotion(dependency: unknown) {
   }, [dependency]);
 }
 export function ChangingTitle() {
-  const [text, setText] = useState('Sài Gòn');
+  const { t, locale } = useLocale();
+  const words = [t('city'), t('cholon'), t('benThanh')];
+  const [text, setText] = useState(words[0]);
+  const ref = useRef<HTMLSpanElement>(null);
+  const [sizes, setSizes] = useState<[number, number]>([48, 48]);
   useEffect(() => {
+    setText(words[0]);
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const words = ['Sài Gòn', 'Chợ Lớn', 'Bến Thành']; let word = 0, letters = words[0].length, deleting = true;
+    const glyphs = words.map(word => Array.from(word)); let word = 0, letters = glyphs[0].length, deleting = true;
     let timer: ReturnType<typeof setTimeout>;
     const tick = () => {
-      if (deleting) { letters--; setText(words[word].slice(0, letters)); if (!letters) { deleting = false; word = (word + 1) % words.length; } }
-      else { letters++; setText(words[word].slice(0, letters)); if (letters === words[word].length) { deleting = true; timer = setTimeout(tick, 3400); return; } }
+      if (deleting) { letters--; setText(glyphs[word].slice(0, letters).join('')); if (!letters) { deleting = false; word = (word + 1) % words.length; } }
+      else { letters++; setText(glyphs[word].slice(0, letters).join('')); if (letters === glyphs[word].length) { deleting = true; timer = setTimeout(tick, 3400); return; } }
       timer = setTimeout(tick, deleting ? 65 : 120);
     };
     timer = setTimeout(tick, 3800); return () => clearTimeout(timer);
-  }, []);
-  return <><span className="sr-only">Một thoáng Sài Gòn</span><span aria-hidden="true"><span className="title-first-line">Một thoáng</span><span className="typewriter-word">{text}<span className="typewriter-caret"/></span></span></>;
+  }, [locale]);
+  useEffect(() => {
+    const element = ref.current; if (!element) return;
+    let alive = true;
+    const measure = () => {
+      if (!alive) return;
+      const style = getComputedStyle(element), context = document.createElement('canvas').getContext('2d')!;
+      context.font = `700 100px ${style.fontFamily}`;
+      const available = element.clientWidth * .96;
+      const fit = (items: string[]) => Math.min(innerWidth <= 760 ? 90 : 136, available / Math.max(...items.map(item => context.measureText(item.toLocaleUpperCase()).width)) * 100);
+      setSizes([fit([t('titleLead')]), fit(words)]);
+    };
+    const observer = new ResizeObserver(measure); observer.observe(element); measure();
+    void document.fonts.ready.then(measure); document.fonts.addEventListener('loadingdone', measure);
+    return () => { alive = false; observer.disconnect(); document.fonts.removeEventListener('loadingdone', measure); };
+  }, [locale]);
+  return <><span className="sr-only">{t('titleLead')} {t('city')}</span><span ref={ref} className="title-lines" aria-hidden="true"><span className="title-first-line" style={{fontSize: sizes[0]}}>{t('titleLead')}</span><span className="typewriter-word" style={{fontSize: sizes[1]}}>{text}<span className="typewriter-caret"/></span></span></>;
 }
 export function useCurtain() {
   const iris = useRef<HTMLDivElement>(null), wipes = useRef<HTMLDivElement>(null);

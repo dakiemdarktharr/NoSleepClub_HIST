@@ -6,11 +6,20 @@ import { useButtonMotion } from '../ui/Motion';
 import { coordinates, distance } from './geo';
 import { walkingKey } from './transit';
 import type { Journey, Place, RoadRoute, TravelMode } from './types';
-const modes = [{ id: 'walk', text: 'Đi bộ', icon: 'walk' }, { id: 'motorbike', text: 'Xe máy', icon: 'bike' }, { id: 'transit', text: 'Bus / Metro', icon: 'transit' }] as const;
+import { useLocale } from '../i18n';
+import DestinationInput from './DestinationInput';
+import PinButton, { type Field } from './PinButton';
+import { maneuverText } from './maneuvers';
+import { LANDMARKS, landmarkPlace } from './landmarks';
+const modes = [{ id: 'walk', text: 'walk', icon: 'walk' }, { id: 'motorbike', text: 'motorbike', icon: 'bike' }, { id: 'transit', text: 'publicTransport', icon: 'transit' }] as const;
 const metersText = (meters: number) => meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters)} m`;
 const inside = (point: Place) => point.lat >= 10.25 && point.lat <= 11.4 && point.lon >= 106.15 && point.lon <= 107.4;
 const tooltipText = (name: string) => { const span = document.createElement('span'); span.textContent = name; return span; };
 export default function MapsPanel() {
+  const {t,m,locale}=useLocale();
+  const [pickField,setPickField]=useState<Field|null>(null),[drag,setDrag]=useState<{x:number;y:number;field:Field}|null>(null);
+  const pickRef=useRef(pickField);pickRef.current=pickField;
+  const pinRef=useRef((lat:number,lon:number,field:Field)=>{});pinRef.current=pinAt;
   const [origin, setOrigin] = useState<Place | null>(null), [destination, setDestination] = useState<Place | null>(null);
   const [originText, setOriginText] = useState(''), [destinationText, setDestinationText] = useState('');
   const [mode, setMode] = useState<TravelMode>('walk'), [busy, setBusy] = useState(false), [progress, setProgress] = useState('');
@@ -20,12 +29,21 @@ export default function MapsPanel() {
   const worker = useRef<Worker | null>(null), sequence = useRef(0), generation = useRef(0), mounted = useRef(true);
   const pending = useRef(new Map<number, { resolve: (journey: Journey | null) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>());
   useButtonMotion(`${mode}:${collapsed}:${busy}:${results.length}:${!!road}:${!!journey}:${expanded}`);
+  function displayPlace(point:Place):Place {
+    const preset=LANDMARKS.find(item=>item.id===point.id);
+    return preset?landmarkPlace(preset,locale):point.id.startsWith('pin:')?{...point,name:t(point.id.startsWith('pin:origin:')?'pinnedOrigin':'pinnedDestination')}:point.id==='current'?{...point,name:t('myLocation')}:point;
+  }
+  useEffect(()=>{
+    if(origin){const next=displayPlace(origin);if(next.name!==origin.name){setOrigin(next);if(originText===origin.name)setOriginText(next.name);}}
+    if(destination){const next=displayPlace(destination);if(next.name!==destination.name){setDestination(next);if(destinationText===destination.name)setDestinationText(next.name);}}
+  },[locale]);
   useEffect(() => {
     mounted.current = true;
     const instance = L.map(canvas.current!, { zoomControl: false, attributionControl: true }).setView([10.778, 106.702], 14);
     L.control.zoom({ position: 'topright' }).addTo(instance);
     L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> / <a href="https://www.hotosm.org/" target="_blank" rel="noreferrer">HOT</a> / <a href="https://www.openstreetmap.fr/" target="_blank" rel="noreferrer">OSM France</a>', referrerPolicy: 'strict-origin-when-cross-origin' }).addTo(instance);
     map.current = instance; lines.current = L.layerGroup().addTo(instance);
+    instance.on('click',event=>{if(pickRef.current)pinRef.current(event.latlng.lat,event.latlng.lng,pickRef.current);});
     const resize = new ResizeObserver(() => instance.invalidateSize()); resize.observe(canvas.current!);
     return () => { mounted.current = false; generation.current++; resize.disconnect(); instance.remove(); map.current = null; worker.current?.terminate(); pending.current.forEach(item => { clearTimeout(item.timer); item.reject(new Error('Đã đóng bản đồ.')); }); pending.current.clear(); };
   }, []);
@@ -34,7 +52,8 @@ export default function MapsPanel() {
     layer.clearLayers(); const bounds: L.LatLngTuple[] = [];
     for (const [point, letter] of [[origin, 'A'], [destination, 'B']] as const) if (point) {
       const location = coordinates(point); bounds.push(location);
-      L.marker(location, { icon: L.divIcon({ className: `map-pin ${letter === 'B' ? 'destination' : ''}`, html: letter, iconSize: [30, 30], iconAnchor: [15, 15] }) }).bindTooltip(tooltipText(point.name), { direction: 'top' }).addTo(layer);
+      const marker=L.marker(location, { draggable:true, keyboard:true, title:t(letter==='B'?'destinationPin':'originPin'), alt:letter, icon: L.divIcon({ className: `map-pin ${letter === 'B' ? 'destination' : ''}`, html: letter, iconSize: [44, 44], iconAnchor: [22, 22] }) }).bindTooltip(tooltipText(point.name), { direction: 'top' }).addTo(layer);
+      marker.on('dragend',()=>{const p=marker.getLatLng();pinRef.current(p.lat,p.lng,letter==='B'?'destination':'origin');});
     }
     if (road) { L.polyline(road.coordinates, { color: '#f8f3e8', weight: 9, opacity: .95 }).addTo(layer); L.polyline(road.coordinates, { color: '#284e40', weight: 5 }).addTo(layer); bounds.push(...road.coordinates); }
     if (journey) for (const leg of journey.legs) {
@@ -45,7 +64,13 @@ export default function MapsPanel() {
     }
     if (bounds.length > 1) { const mobile = innerWidth <= 760; instance.fitBounds(L.latLngBounds(bounds), { paddingTopLeft: mobile ? [32, collapsed ? 150 : 310] : [400, 40], paddingBottomRight: mobile ? [32, road || journey ? 230 : 40] : [60, 70], maxZoom: 17, animate: !matchMedia('(prefers-reduced-motion: reduce)').matches }); }
     else if (bounds.length) instance.setView(bounds[0], 16);
-  }, [origin, destination, road, journey, collapsed]);
+  }, [origin, destination, road, journey, collapsed,locale]);
+  function pinAt(lat:number,lon:number,field:Field){
+    const point={id:`pin:${field}:${lat.toFixed(6)},${lon.toFixed(6)}`,name:t(field==='origin'?'pinnedOrigin':'pinnedDestination'),address:`${lat.toFixed(6)}, ${lon.toFixed(6)}`,lat,lon};
+    if(!inside(point)){setError('Bản đồ thử nghiệm hiện hỗ trợ khu vực TP.HCM.');return;}
+    choose(point,field);setPickField(null);setCollapsed(false);
+  }
+  function dropPin(x:number,y:number,field:Field){const bounds=canvas.current?.getBoundingClientRect(),instance=map.current;if(!bounds||!instance||x<bounds.left||x>bounds.right||y<bounds.top||y>bounds.bottom)return;const p=instance.containerPointToLatLng([x-bounds.left,y-bounds.top]);pinAt(p.lat,p.lng,field);}
   function invalidate() { generation.current++; setRoad(null); setJourney(null); setResults([]); setError(''); }
   async function search(field: 'origin' | 'destination') {
     const query = (field === 'origin' ? originText : destinationText).trim(); if (query.length < 2) { setError('Nhập tên địa điểm hoặc địa chỉ để tìm.'); return; }
@@ -121,24 +146,31 @@ export default function MapsPanel() {
     finally { if (mounted.current) setBusy(false); }
   }
   const hasRoute = !!road || !!journey;
-  return <section className="maps-panel" aria-label="Bản đồ và chỉ đường">
-    <div className="map-canvas" ref={canvas} role="region" aria-label="Bản đồ TP.HCM"/>
-    <section className="map-search-sheet" aria-label="Tìm đường"><h1>Đi đâu hôm nay?</h1>
-      {collapsed && hasRoute ? <div className="collapsed-route"><p><strong>{origin?.name}</strong><br/>{destination?.name}</p><button onClick={() => setCollapsed(false)}>Sửa</button></div> : <>
-        <div className="route-fields">{(['origin', 'destination'] as const).map(field => <div className="place-input-row" key={field}><i className={`place-dot ${field}`}/><label className="sr-only" htmlFor={'map-' + field}>{field === 'origin' ? 'Điểm đi' : 'Nơi đến'}</label><input id={'map-' + field} value={field === 'origin' ? originText : destinationText} placeholder={field === 'origin' ? 'Bạn đang ở đâu?' : 'Nhập nơi đến'} disabled={busy} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void search(field); } }} onChange={event => { invalidate(); if (field === 'origin') { setOrigin(null); setOriginText(event.target.value); } else { setDestination(null); setDestinationText(event.target.value); } }}/><button className="icon-button" aria-label={field === 'origin' ? 'Tìm điểm đi' : 'Tìm nơi đến'} disabled={busy} onClick={() => void search(field)}><Icon name="search" size={18}/></button></div>)}</div>
-        <div className="place-search-actions"><button disabled={busy} onClick={locate}><Icon name="locate" size={16}/>Vị trí của tôi</button><button disabled={busy} onClick={() => { invalidate(); setOrigin(destination); setDestination(origin); setOriginText(destinationText); setDestinationText(originText); }}><Icon name="swap" size={16}/>Đổi chiều</button></div>
+  const pinProps=(field:Field)=>({field,disabled:busy,active:pickField===field,onPick:()=>{setPickField(pickField===field?null:field);setResults([]);},onDrag:setDrag,onDrop:(x:number,y:number)=>dropPin(x,y,field)});
+  return <section className={`maps-panel ${pickField?'is-picking':''} ${drag?'is-dragging':''}`} aria-label={t('mapRegion')}>
+    <div className="map-canvas" ref={canvas} role="region" aria-label={t('cityMap')}/>
+    <p className="sr-only" id="map-pin-help">{t('pinHelp')}</p>
+    {drag&&<div className={`drag-pin ${drag.field}`} style={{left:drag.x,top:drag.y}} aria-hidden="true">{drag.field==='origin'?'A':'B'}</div>}
+    {pickField&&<div className="pin-prompt" role="status"><span>{t(pickField==='origin'?'pickOrigin':'pickDestination')}</span><button onClick={()=>setPickField(null)}>{t('cancel')}</button></div>}
+    <section className="map-search-sheet" aria-label={t('directions')}><h1>{t('whereNext')}</h1>
+      {collapsed && hasRoute ? <div className="collapsed-route"><p><strong>{origin?.name}</strong><br/>{destination?.name}</p><button onClick={() => setCollapsed(false)}>{t('edit')}</button></div> : <>
+        <div className="route-fields">
+          <div className="place-input-row"><PinButton {...pinProps('origin')}/><label className="sr-only" htmlFor="map-origin">{t('origin')}</label><input id="map-origin" autoComplete="off" value={originText} placeholder={t('originPlaceholder')} disabled={busy} onKeyDown={event=>{if(event.key==='Enter'&&!event.nativeEvent.isComposing){event.preventDefault();void search('origin');}}} onChange={event=>{invalidate();setOrigin(null);setOriginText(event.target.value);}}/><button className="icon-button" aria-label={t('searchOrigin')} disabled={busy} onClick={()=>void search('origin')}><Icon name="search" size={18}/></button></div>
+          <div className="place-input-row destination-row"><PinButton {...pinProps('destination')}/><DestinationInput value={destinationText} disabled={busy} onChange={value=>{invalidate();setDestination(null);setDestinationText(value);}} onSearch={()=>void search('destination')} onChoose={place=>choose(place,'destination')}/></div>
+        </div>
+        <div className="place-search-actions"><button disabled={busy} onClick={locate}><Icon name="locate" size={16}/>{t('myLocation')}</button><button disabled={busy} onClick={() => { invalidate(); setOrigin(destination); setDestination(origin); setOriginText(destinationText); setDestinationText(originText); }}><Icon name="swap" size={16}/>{t('swap')}</button></div>
       </>}
-      {results.length > 0 && <ul className="place-results" aria-label={searchingFor === 'origin' ? 'Kết quả điểm đi' : 'Kết quả nơi đến'}>{results.map(place => <li key={place.id}><button onClick={() => choose(place)}><span>{place.name}</span><small>{place.address}</small></button></li>)}</ul>}
-      <div className="transport-tabs" aria-label="Phương tiện">{modes.map(item => <button key={item.id} disabled={busy} aria-pressed={mode === item.id} onClick={() => { setMode(item.id); setRoad(null); setJourney(null); setError(''); if (origin && destination) void plan(item.id); }}><Icon name={item.icon}/>{item.text}</button>)}</div>
-      {(!collapsed || !hasRoute || busy) && <button className="primary wide map-submit" disabled={busy} onClick={() => void plan()}>{busy ? <><i className="spinner"/>{progress}</> : 'Tìm đường'}</button>}
-      {error && <p className="map-error" role="alert">{error}</p>}
-      {!hasRoute && !busy && <p className="map-hint">TP.HCM. Nhấn kính lúp để chọn đúng địa điểm. Địa chỉ gửi tới dịch vụ bản đồ; camera không gửi kèm.</p>}
+      {results.length>0&&<ul className="place-results" aria-label={t(searchingFor==='origin'?'originResults':'destinationResults')}>{results.map(place=><li key={place.id}><button onClick={()=>choose(place)}><span>{place.name}</span><small>{place.address}</small></button></li>)}</ul>}
+      <div className="transport-tabs" aria-label={t('transport')}>{modes.map(item=><button key={item.id} disabled={busy} aria-pressed={mode===item.id} onClick={()=>{setMode(item.id);setRoad(null);setJourney(null);setError('');if(origin&&destination)void plan(item.id);}}><Icon name={item.icon}/>{t(item.text)}</button>)}</div>
+      {(!collapsed||!hasRoute||busy)&&<button className="primary wide map-submit" disabled={busy} onClick={()=>void plan()}>{busy?<><i className="spinner"/>{m(progress)}</>:t('findRoute')}</button>}
+      {error&&<p className="map-error" role="alert">{m(error)}</p>}
+      {!hasRoute&&!busy&&<p className="map-hint">{t('mapHint')}</p>}
     </section>
-    {hasRoute && <section className={`route-sheet ${expanded ? 'is-expanded' : ''}`} aria-label="Hành trình"><div className="route-summary"><strong>{metersText(road ? road.meters : journey!.meters)}</strong><span>{road ? `Khoảng ${Math.max(1, Math.round(road.seconds / 60))} phút` : `${journey!.boardings} tuyến / ${Math.max(0, journey!.boardings - 1)} lần đổi`}</span></div>
-      <p className="route-description">{road ? 'Tối ưu quãng đường theo mạng đường hiện có.' : 'Lên đúng chiều tuyến ghi bên dưới.'}</p>
-      {road && <details onToggle={event => setExpanded(event.currentTarget.open)}><summary>Các bước di chuyển</summary><ol className="road-instructions">{road.instructions.map((instruction, i) => <li key={i}>{instruction.text}{instruction.meters > 0 && <small> ({metersText(instruction.meters)})</small>}</li>)}</ol></details>}
-      {journey && <><div className="route-line-chips">{journey.legs.filter(leg => leg.line).map((leg, i) => <span className={`line-code ${leg.kind}`} key={i}>{leg.kind === 'metro' ? 'Metro ' : 'Bus '}{leg.line!.code}</span>)}</div><button className="journey-expand" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? 'Thu gọn hành trình' : 'Trạm lên, xuống & chuyển tuyến'}</button>{expanded && <ol className="transit-steps">{journey.legs.map((leg, index) => <li key={index} className={leg.kind === 'walk' ? 'walk-leg' : ''}>{leg.kind === 'walk' ? <><h3>Đi bộ {metersText(leg.meters)}</h3><p>Đến {leg.to.name}</p></> : <><span className={`line-code ${leg.kind}`}><Icon name="transit" size={14}/>{leg.kind === 'metro' ? 'Metro ' : 'Xe buýt '}{leg.line!.code}</span><h3>Lên tại {leg.from.name}</h3><small>Hướng {leg.line!.headsign}</small><p>Xuống tại <strong>{leg.to.name}</strong></p><small>{leg.stopCount} trạm theo dữ liệu nguồn</small></>}</li>)}</ol>}</>}
-      <p className="route-footnote">{road ? 'Valhalla / OpenStreetMap. Thời gian ước tính, chưa có giao thông trực tiếp.' : `Nguồn tuyến: EBMS TP.HCM & OpenStreetMap. Dữ liệu ${new Date(journey!.updatedAt).toLocaleDateString('vi-VN')}. Sơ đồ tuyến, chưa tính giờ chờ hay chuyến cuối; kiểm tra biển trạm và chiều xe.`}</p>
+    {hasRoute&&<section className={`route-sheet ${expanded?'is-expanded':''}`} aria-label={t('journey')}><div className="route-summary"><strong>{metersText(road?road.meters:journey!.meters)}</strong><span>{road?t('minutes',{n:Math.max(1,Math.round(road.seconds/60))}):t('transfers',{lines:journey!.boardings,changes:Math.max(0,journey!.boardings-1)})}</span></div>
+      <p className="route-description">{t(road?'roadSummary':'transitSummary')}</p>
+      {road&&<details onToggle={event=>setExpanded(event.currentTarget.open)}><summary>{t('routeSteps')}</summary><ol className="road-instructions">{road.instructions.map((instruction,i)=><li key={i}>{maneuverText(instruction,locale)}{instruction.meters>0&&<small> ({metersText(instruction.meters)})</small>}</li>)}</ol></details>}
+      {journey&&<><div className="route-line-chips">{journey.legs.filter(leg=>leg.line).map((leg,i)=><span className={`line-code ${leg.kind}`} key={i}>{t(leg.kind==='metro'?'metroLine':'busLine',{code:leg.line!.code})}</span>)}</div><button className="journey-expand" aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}>{t(expanded?'collapseJourney':'expandJourney')}</button>{expanded&&<ol className="transit-steps">{journey.legs.map((leg,index)=><li key={index} className={leg.kind==='walk'?'walk-leg':''}>{leg.kind==='walk'?<><h3>{t('walkDistance',{distance:metersText(leg.meters)})}</h3><p>{t('toPlace',{place:displayPlace(leg.to).name})}</p></>:<><span className={`line-code ${leg.kind}`}><Icon name="transit" size={14}/>{t(leg.kind==='metro'?'metroLine':'busLine',{code:leg.line!.code})}</span><h3>{t('boardAt',{place:displayPlace(leg.from).name})}</h3><small>{t('towards',{place:leg.line!.headsign})}</small><p>{t('alightAt',{place:displayPlace(leg.to).name})}</p><small>{t('sourceStopCount',{n:leg.stopCount||0})}</small></>}</li>)}</ol>}</>}
+      <p className="route-footnote">{road?t('roadFootnote'):t('transitFootnote',{date:new Intl.DateTimeFormat(locale,{dateStyle:'medium'}).format(new Date(journey!.updatedAt))})}</p>
     </section>}
   </section>;
 }
