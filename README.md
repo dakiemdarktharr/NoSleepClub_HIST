@@ -1,76 +1,84 @@
 # NoSleepClub HIST
 
-A mobile browser proof of concept for **visual place recognition from a five-second labelled video**, with an embedded Ho Chi Minh City route planner.
+A mobile web proof of concept with two features:
 
-[Live HTTPS app](https://nosleepclub-hist-connected.vercel.app/) · [App QR](docs/qr-app.png) · [Release audit](docs/audit-localization.md)
+* **Place recognition:** Dev records and names a five-second clip. User points a camera at that place; the app displays its name when visual evidence is sufficient, or `...` when it is not.
+* **Ho Chi Minh City maps:** users choose two points and request walking, motorbike or bus/metro directions inside the app.
 
-![Open the app on a phone](docs/qr-app.png)
+[Open the HTTPS app](https://nosleepclub-hist-connected.vercel.app/) · [App QR](docs/qr-app.png) · [UI audit](docs/audit-localization.md) · [Translation review](docs/translation-review.md)
 
-## Runtime architecture
+![QR code that opens the app, without granting room access](docs/qr-app.png)
+
+## Try the recognition flow
+
+1. Choose a language, then **Dev**. The browser creates a room if it does not already have a writable one.
+2. Start the camera and record five seconds of one area. Give the clip a place name and choose **Save & train**.
+3. Wait for training to finish. Open **Library → Room QR** on the Dev device.
+4. Scan that room QR on another phone, choose **User**, and start the camera. Both devices now use the same reference set.
+
+The QR above opens the app only. A **room QR** additionally grants access to that room's recordings and recognition references. User and Dev are test modes; they are not account logins. In Vietnamese, these modes are labelled **Người dùng** and **Nhà phát triển**.
+
+Five seconds is the recording duration, not a promise of five-second training or instant startup. A new device must download and initialize the vision backbone. Once ready, a strong match can return a name from the first processed frame. Later views still need visual overlap with the recorded place.
+
+## Architecture and data flow
+
+React coordinates the camera, workers, cache and API calls. The vision worker extracts features and predicts places; it does not upload recordings or call the room API itself.
 
 ```mermaid
-flowchart LR
-  subgraph Browser
-    UI[React UI / locale provider]
-    CAM[Camera / MediaRecorder]
-    BUF[Quality-filtered frames]
-    V[Vision worker: DINOv2 + ORB / RANSAC]
-    IDB[IndexedDB classifier cache]
-    MAP[Leaflet / pin picker]
-    T[Transit worker: Dijkstra]
-    CAM --> BUF --> V
-    UI --> CAM
-    V <--> IDB
-    UI --> MAP --> T
+flowchart TB
+  subgraph device["Browser on each device"]
+    camera["Camera and MediaRecorder"]
+    client["React UI and RPC client"]
+    vision["Vision worker: DINOv2 and ORB/RANSAC"]
+    cache["IndexedDB classifier cache"]
+    camera --> client
+    client <--> vision
+    client <--> cache
   end
-  V <-->|features / classifier| RPC[Vercel: POST /api/rpc]
-  CAM -->|Dev confirms save: chunked video| RPC
-  RPC <--> DB[(MongoDB Atlas)]
-  MAP -->|place / road queries| RPC
-  RPC --> Photon[Photon / OSM geocoding]
-  RPC --> Valhalla[Valhalla / OSM routing]
-  T --> Snapshot[Static EBMS transit snapshot]
+  api["Vercel: /api/rpc"]
+  database[("MongoDB Atlas")]
+  weights["Pinned model files on Hugging Face"]
+  client <-->|"JSON over HTTPS"| api
+  api <--> database
+  vision -->|"Download model files"| weights
 ```
 
-The server stores data and proxies map services; **vision inference runs in the browser**. User camera frames stay on the device. Dev recordings, reference features and the fitted classifier are uploaded when Dev saves a named clip. Map providers receive locations, not camera images.
+[Open the rendered architecture SVG](docs/architecture-1.svg) if your Markdown viewer does not render Mermaid.
 
-| Module | Responsibility |
+**Data boundaries:** User camera frames stay in the browser. When Dev confirms a save, the client uploads the original video, a thumbnail and extracted reference features. It also saves the fitted classifier. Vercel validates and stores these objects in MongoDB; it does not run DINOv2 inference. Changing the interface language does not rename footage, modify references or retrain the model.
+
+| Source | Responsibility |
 | --- | --- |
-| `src/App.tsx` | Role flow, camera lifecycle, recording, save/retry, training/evaluation |
-| `src/client.ts` | RPC client, room persistence, video transfer, worker request lifecycle |
-| `src/vision.worker.ts` | Backbone initialization, embeddings, ORB extraction and homography verification |
-| `src/fewshot.ts` | Prototype fitting, support selection, semantic ranking, artifact compatibility |
-| `src/evidence.ts`, `recognition.ts` | Evidence thresholds, quality filter, temporal confirmation/expiry |
-| `src/model-cache.ts`, `shared.ts` | IndexedDB and versioned feature/classifier contracts |
-| `src/maps/MapsPanel.tsx` | Search, pin placement, routing and walking-leg verification |
-| `src/maps/DestinationInput.tsx`, `PinButton.tsx` | Landmark combobox and pointer/tap pin controls |
-| `src/maps/transit.ts`, `transit.worker.ts` | Directed transit graph, heap-based Dijkstra and worker adapter |
-| `src/maps/landmarks.ts`, `maneuvers.ts` | Ten curated OSM places and structured navigation localization |
-| `src/i18n/` | Typed five-language catalog, runtime message adapter, lazy font styles |
-| `server/rpc.ts`, `validation.ts` | Authorization, quotas, lifecycle checks and validation |
-| `server/db.ts`, `maps.ts` | Mongo indexes/pooling and cached, throttled map requests |
-| `api/` | Vercel entry points; server imports need explicit `.js` ESM extensions |
-| `scripts/assets.mjs`, `fetch-transit.mjs` | WASM assets and explicitly refreshed public transit dataset |
+| [App.tsx](src/App.tsx) | Role flow, camera lifecycle, recording, training and evaluation |
+| [client.ts](src/client.ts) | JSON RPC, room capabilities, chunked video transfer and worker requests |
+| [vision.worker.ts](src/vision.worker.ts) | Backbone loading, embeddings, ORB extraction and geometric matching |
+| [fewshot.ts](src/fewshot.ts), [evidence.ts](src/evidence.ts), [recognition.ts](src/recognition.ts) | Classifier fitting/ranking, acceptance rules, quality checks and temporal confirmation |
+| [model-cache.ts](src/model-cache.ts), [shared.ts](src/shared.ts) | IndexedDB cache and shared feature/model types |
+| [MapsPanel.tsx](src/maps/MapsPanel.tsx), [transit.ts](src/maps/transit.ts) | Map interactions, route verification and transit search |
+| [i18n/](src/i18n/) | Six-language UI, progress/error localization and font selection |
+| [rpc.ts](server/rpc.ts), [validation.ts](server/validation.ts) | Authorization, upload lifecycle, quotas and input validation |
+| [db.ts](server/db.ts), [maps.ts](server/maps.ts) | MongoDB connection/indexes and cached map-provider requests |
+| [api/](api/) | Vercel HTTP entry points |
 
-## Local development
+## Run locally
 
-Use **Node 24.22.1 or a later patched 24.x release** (`>=24.22.1 <25`).
+Requirements: a patched **Node 24.x release, at least 24.22.1**, npm, and a MongoDB database reachable by the API server. The declared Node range is `>=24.22.1 <25`.
 
 ```powershell
 npm ci --ignore-scripts
 Copy-Item .env.example .env.local
-# Set MONGODB_URI in .env.local. Never commit its value.
+# Edit .env.local and set MONGODB_URI before starting the API.
 npm run dev
 ```
 
-UI: `http://127.0.0.1:5173`. Local API: `127.0.0.1:8787`, proxied through Vite. Restart the dev command after backend edits; the API is not hot reloaded. Camera access works over localhost HTTP; phones need the HTTPS deployment.
+Open `http://127.0.0.1:5173`. Vite proxies `/api` to the local API at `127.0.0.1:8787`. Frontend edits reload automatically; restart the dev command after backend edits. A phone needs the HTTPS deployment for camera access. Localhost HTTP works for testing on the development computer.
 
-| Variable | Scope / meaning |
+| Environment variable | Meaning |
 | --- | --- |
-| `MONGODB_URI` | Required for API operations; server-only Atlas TLS connection URI |
-| `MONGODB_DB` | Optional; defaults to `nosleepclub_hist` |
+| `MONGODB_URI` | Required by the API; use a TLS connection URI with database-scoped credentials |
+| `MONGODB_DB` | Optional database name; defaults to `nosleepclub_hist` |
 
-Never prefix secrets with `VITE_`, which exposes values to the client bundle. `.env*`, recordings, dependency caches, local tool runtimes and build output are ignored by Git.
+Keep credentials server-side. Variables prefixed with `VITE_` are exposed to client code. Environment files, recordings, dependency caches, temporary tools and generated build output are ignored by Git.
 
 ```powershell
 npm run typecheck
@@ -79,142 +87,182 @@ npm run build
 npm audit --audit-level=high
 ```
 
-Build checks TypeScript, copies ONNX Runtime WASM files into `public/ort`, then builds `dist`. WASM and fonts are self-hosted. Keep `assetsInlineLimit: 0`: inlined font URLs violate the production `font-src 'self'` policy.
+Build checks TypeScript, copies ONNX Runtime WASM assets with `scripts/assets.mjs`, and produces `dist` with Vite. WASM and fonts are served by the app; model weights are downloaded from Hugging Face. Keep `assetsInlineLimit: 0`, because the production `font-src 'self'` policy does not allow inlined font data URLs.
 
-## Recording and recognition
+`GET /api/health` pings MongoDB. A successful health response confirms database connectivity, not camera permission, model readiness or map-provider availability. `npm run preview` serves the frontend build; a local API process is still needed for database-backed operations.
 
-Choose a language, then **Dev**. Start the rear camera, record five seconds, name the place and save. Capture sampling runs every 200 ms independently of model inference; feature extraction happens after recording stops. Share **Library → Room QR** to load those references in User mode on another device. The generic QR above only opens the app.
+## How recognition works
 
-“Training from five seconds” means fitting a lightweight classifier over frozen pretrained features, **not fine-tuning DINOv2**. A new device first downloads/initializes the backbone. Five-second capture does not promise five-second processing or zero startup latency. Later views must overlap stable visual details in the reference clip.
+### Terms used in code
 
-### Feature contract and preprocessing
-
-* The pinned DINOv2 Small q8 backbone emits a 384-dimensional L2-normalized embedding. Exact model ID/revision are in `src/vision.worker.ts`.
-* Feature version: `dinov2-small-q8-orb-v1`; artifact version: `fewshot-dinov2-v3`. Reuse requires matching versions and sorted reference footage IDs.
-* The crop matches the viewfinder's `object-fit: cover`; the longer side is at most 512 px.
-* Quality is measured at a consistent 256 px scale: mean luminance `[18,240]`, Laplacian variance `≥65`, plus usable ORB keypoints. This practical filter does not perfectly detect every motion blur.
-* Up to eight time bins retain their sharpest frame. Stationary clips are valid; similar frames are not all discarded.
-* ORB points are distributed across a 4×4 grid, capped at 250, with 32-byte descriptors.
-
-### Fitting and inference
-
-Labels use NFC normalization and case folding. Background clips form a rejection class. Up to three spherical prototypes preserve distinct viewpoints through six assignment/normalization iterations. Farthest-point support selection keeps at most 24 support frames overall, allocating 2–8 per class.
-
-For normalized vectors, similarity is `s(q,x)=q·x`. Ranking uses the best prototype or support score. Training derives semantic thresholds in `[0.88,0.94]` and fast thresholds in `[0.95,0.995]`; the fast path also requires a semantic gap `≥0.04` and accounts for nearby negative examples.
-
-**Every accepted label requires geometric verification**, including high semantic similarity:
-
-1. Verify up to three candidate classes and four supports per class, with semantic score `≥0.60`.
-2. Hamming matches require distance `<64`, Lowe ratio `<0.75`, and unique reference keypoint matches.
-3. Homography RANSAC uses 4 px tolerance, 600 iterations, confidence `0.995`.
-4. A usable geometric match needs at least 10 inliers, ratio `≥0.35`, and spatial spread `≥0.025` of the query image area.
-5. Acceptance needs **12 inliers**, a non-background winner, and `best ≥ 1.35×second + 3` when a competitor exists.
-6. **24 inliers**, or a fast semantic match with 12, permits immediate confirmation. Moderate evidence requires two consistent predictions. Weak evidence clears the label to `...` immediately.
-
-Stale results expire after `clamp(1.8×inferenceLatency+120ms,2500ms,5000ms)`. WASM inference uses one thread for compatibility; OpenCV allocations are explicitly freed. Do not await the OpenCV module directly: it is thenable; use its runtime initialization callback.
-
-Similarity and inlier count are **not calibrated probabilities**. The app recognizes the visible scene, not the holder's position, gaze, room-level GPS or a 3D map. Repeated patterns, changed furniture, poor texture and lighting/viewpoint changes can cause refusals or mistakes. **Held-out test** clips are excluded from reference training. Their evaluation reports correct/wrong/uncertain predictions and unknown-scene false accepts. Correlated frames from one clip do not establish an independent accuracy benchmark.
-
-## RPC and capability authorization
-
-`POST /api/rpc` accepts JSON with `action`; room actions add `roomId` and `key`. Inputs, vector dimensions, descriptor size, chunk counts and artifact references are validated by Zod. Map actions are public but rate limited.
-
-| Action | Access | Purpose |
-| --- | --- | --- |
-| `workspace.create` | Public, rate limited | Creates room UUID and read/write capabilities |
-| `workspace.get` | Read/write | Lists metadata; read users see completed clips only |
-| `footage.create` | Write | Reserves storage and creates a pending upload |
-| `footage.chunk`, `footage.frames` | Write | Uploads numbered video chunks and feature pages |
-| `footage.complete` | Write | Validates declared parts before making footage usable |
-| `footage.delete` | Write | Removes video/features and invalidates the classifier |
-| `media.get`, `frames.get` | Read/write | Downloads parts/features |
-| `model.get`, `model.save` | Read / write | Loads/stores versioned classifier artifacts |
-| `maps.search`, `maps.route` | Public, rate limited | Geocoding and pedestrian/motor-scooter routes |
-
-Capabilities contain 32 random bytes. Mongo stores SHA-256 hashes, compared in constant time. The creator's browser keeps its write capability. A room QR carries the read capability in the URL fragment, stripped from the visible URL after restoration; the room UUID alone grants no access. These are **test roles, not identity-based accounts**. Share room QR only with people permitted to view its recordings. Losing browser storage can lose write access; there is no account recovery flow.
-
-## MongoDB data model
-
-| Collection | Data / invariants |
+| Term | Meaning in this project |
 | --- | --- |
-| `workspaces` | Unique room ID, capability hashes, reserved bytes, `datasetVersion`, `modelArtifact` |
-| `footages` | Unique footage ID, room, label, reference/validation kind, pending/ready state, declared sizes/counts, cover, reservation |
-| `chunks` | Unique `(footageId,n)`; 256 KiB BSON Binary video parts |
-| `frames` | Unique `(footageId,n)`; embedding, ORB points/descriptors, quality, timestamp |
-| `quota` | Unique app-wide reservation counter |
-| `limits` | Unique rate-limit/upstream-lease bucket, TTL on `expiresAt` |
-| `maps_cache` | Hashed request key, response, 24-hour TTL |
+| Backbone | Frozen pretrained DINOv2 model used to extract image features |
+| Embedding | A normalized vector of 384 numbers describing an image |
+| Prototype | A representative embedding fitted from a labelled group of frames |
+| Support frame | A retained reference embedding and its ORB keypoints/descriptors |
+| Inlier | A keypoint match consistent with the estimated geometric transformation |
+| Classifier artifact | Versioned prototypes, support frames, labels and training metadata |
+| Held-out clip | A separately recorded test clip that is excluded from reference training |
 
-The staged upload protocol avoids a large Vercel request. Incomplete clips do not enter recognition; the client retains an unsaved draft for retry/download. Reservation counters bound storage use; operations across collections are not one ACID transaction. Artifact saves compare current dataset version and reference IDs to reject stale writes.
+### Capture and fitting
 
-Limits: **24 MiB/video, 80 feature frames/video, 12 clips/room, 96 MiB reserved/room, 360 MiB reserved/app, 40 rooms/app, 5 new rooms/IP/hour**. A clip reserves its size plus 2 MiB overhead. RPC body limit: 700,000 bytes. Atlas resource limits also apply. Footage has no automatic retention deadline; Dev can delete it.
+The client samples frames every 200 ms during recording. Quality filtering runs at capture time; expensive feature extraction runs after recording stops. The quality check uses a consistent 256 px scale and accepts mean luminance in `[18, 240]` with Laplacian variance at least `65`. This rejects many dark, overexposed or blurred frames, but is not a perfect motion-blur detector.
 
-Mongo connection initialization ensures indexes idempotently. Each function process reuses a pool of five, with 8-second connection/selection timeouts.
+Up to eight time bins retain their sharpest frame. A stationary recording remains valid. The crop matches the live viewfinder's `object-fit: cover`, with its longer side reduced to at most 512 px. DINOv2 Small q8 produces the embedding; OpenCV extracts up to 250 ORB points distributed across a 4×4 grid, with 32-byte descriptors. The exact backbone ID and pinned revision are in [vision.worker.ts](src/vision.worker.ts).
 
-## Embedded maps
+Training fits a small classifier over these frozen features; it does not fine-tune DINOv2. Labels are grouped with NFC normalization and case folding. Each class receives up to three spherical prototypes, fitted over six iterations. Support selection keeps at most 24 frames across all classes, with a per-class budget of 2–8. Background examples form a rejection class.
 
-Leaflet renders HOT tiles from OSM France with attribution. Photon/OSM search runs explicitly on magnifier/Enter, not on every keystroke. Inputs also accept `latitude,longitude`. **My location** alone requests geolocation permission.
+### Prediction and rejection
 
-A/B handles support pointer dragging, or tap a handle then tap the map. Placed markers can be dragged again. Point edits invalidate the old route and its request generation. The paper-styled destination combobox supports filtering, arrows, Enter/Escape and touch scrolling. Its ten local presets require no geocoding call.
+For normalized embeddings, cosine similarity is the dot product `s(q, x) = q · x`. Ranking uses each class's best prototype or support score, preserving distinct viewpoints instead of averaging all views together.
 
-`src/maps/landmarks.ts` records verified OSM feature IDs, translated display names and coordinates, including the city museum at **65 Lý Tự Trọng**, Tuệ Thành/Thiên Hậu temple in Cholon, and **Bến Dược** for Củ Chi. Củ Chi is a separate excursion; the cathedral pin is an exterior viewpoint. Coordinates do not guarantee an open entrance. All ten sites are not presented as one walk.
+The current v3 decision path is:
+
+1. Consider up to three classes with semantic score `≥ 0.60`; compare up to four support frames per candidate.
+2. Match ORB descriptors using Hamming distance `< 64`, Lowe ratio `< 0.75` and unique reference matches.
+3. Estimate a homography with RANSAC: 4 px reprojection tolerance, 600 iterations, confidence `0.995`.
+4. Count geometric evidence only when there are at least 10 inliers, an inlier ratio `≥ 0.35`, and an inlier bounding-box area covering `≥ 0.025` of the query image.
+5. Accept a non-background winner only with **at least 12 inliers**. When a competitor has inliers, require `bestInliers ≥ 1.35 × secondInliers + 3`.
+6. Confirm immediately with **24 inliers**, or with 12 inliers plus a fast semantic match. Otherwise require two consistent predictions. A weak or unfamiliar frame clears the result to `...`.
+
+A fast semantic match must exceed the fitted `fastThreshold` in `[0.95, 0.995]` and have a score gap of at least `0.04`. The artifact also stores a fitted `threshold` in `[0.88, 0.94]`; **that field is not an acceptance gate in the current v3 predictor**. Geometric evidence remains mandatory even for high semantic scores. See [fewshot.ts](src/fewshot.ts) and [evidence.ts](src/evidence.ts) for the actual decision path.
+
+Results without fresh confirmation expire after `clamp(1.8 × inferenceLatency + 120 ms, 2500 ms, 5000 ms)`. Similarity and inlier counts are comparison metrics, not calibrated probabilities. The app recognizes the visible scene; it does not determine the holder's coordinates, gaze or a 3D room position. Repeated patterns, changed objects and large lighting/viewpoint changes can cause rejection or mistakes.
+
+### Reusing and evaluating a trained model
+
+Feature version: `dinov2-small-q8-orb-v1`. Classifier version: `fewshot-dinov2-v3`. The client checks these versions and sorted source footage IDs before reuse. It tries IndexedDB, then the room's MongoDB artifact. If neither artifact matches, it fits from stored reference features. Only a writable room can save the new artifact remotely; User mode can cache it locally.
+
+Use held-out clips for evaluation. Reports separate correct, incorrect and uncertain predictions, including unknown scenes that were wrongly accepted. Frames from one clip are correlated; this report alone is not an independent accuracy benchmark.
+
+The WASM backbone uses one thread for device compatibility. OpenCV allocations are released explicitly. Its module is thenable: wait for runtime initialization rather than awaiting the module object directly.
+
+## API, permissions and storage
+
+All app operations use `POST /api/rpc` with a JSON `action`. Room operations also supply `roomId` and a capability `key`. Zod validates input dimensions, descriptor lengths, chunk sizes and model references. Unknown internal errors are not shown verbatim in the UI.
+
+| Action | Required access | Purpose |
+| --- | --- | --- |
+| `workspace.create` | Public; rate limited | Creates a room and returns read/write keys |
+| `workspace.get` | Read or write | Lists footage; read access sees ready clips only |
+| `footage.create` | Write | Reserves storage and creates pending metadata |
+| `footage.chunk`, `footage.frames` | Write | Uploads numbered video parts and feature pages |
+| `footage.complete` | Write | Checks uploaded counts before marking footage ready |
+| `footage.delete` | Write | Removes footage/features and invalidates the saved model |
+| `media.get`, `frames.get` | Read or write | Downloads video parts or feature pages |
+| `model.get` | Read or write | Loads the room's fitted classifier |
+| `model.save` | Write | Stores a classifier if its dataset version/references are still current |
+| `maps.search`, `maps.route` | Public; rate limited | Searches places or requests road routing |
+
+Read and write keys each contain 32 random bytes. MongoDB stores SHA-256 hashes; authorization compares them in constant time. The creator's browser retains the write key. Room QR links carry the read key in a URL fragment; the app stores it and removes the fragment from the visible URL. A room UUID alone grants no access. Losing browser storage can lose write access; account recovery is not implemented.
+
+Video upload is staged: create metadata → upload 256 KiB parts → upload features → complete. This keeps individual JSON requests below the API body limit; video parts are base64 encoded in transit and stored as BSON Binary. Pending or incomplete clips do not become recognition sources. On failure, the client attempts cleanup and retains the unsaved draft for retry/download; leftover pending clips can be removed in Dev.
+
+| MongoDB collection | Contents / index |
+| --- | --- |
+| `workspaces` | Unique room ID, key hashes, reservation, dataset version and model artifact |
+| `footages` | Unique footage ID; room, label, kind, status, counts, thumbnail and reservation |
+| `chunks` | Video binary; unique `(footageId, n)` |
+| `frames` | Feature objects; unique `(footageId, n)` |
+| `quota` | Application reservation counter |
+| `limits` | Rate-limit / provider-lease buckets; TTL expiry |
+| `maps_cache` | Hashed request key and response; 24-hour TTL |
+
+Application limits are 24 MiB/video, 80 feature frames/video, 12 clips/room, 96 MiB reserved/room, 360 MiB reserved/app, 40 rooms/app and five new rooms/IP/hour. Each clip reserves its declared video size plus 2 MiB overhead. JSON request bodies are limited to 700,000 bytes. These are prototype controls; cross-collection operations are not one ACID transaction. Atlas has additional resource limits. Footage remains until Dev deletes it.
+
+Each function process reuses a MongoDB pool of five with 8-second connection/selection timeouts. Connection initialization ensures indexes idempotently.
+
+## Maps and transit routing
+
+```mermaid
+flowchart LR
+  map["Browser map UI"]
+  planner["Transit worker"]
+  api["Vercel maps RPC"]
+  cache[("MongoDB: cache and limits")]
+  photon["Photon: search"]
+  valhalla["Valhalla: roads"]
+  snapshot["Transit JSON"]
+  tiles["HOT / OSM France"]
+  map -->|"Search and roads"| api
+  map <-->|"Bus and metro"| planner
+  map -->|"Map imagery"| tiles
+  api <--> cache
+  api --> photon
+  api --> valhalla
+  planner -->|"Load snapshot"| snapshot
+```
+
+[Open the rendered maps SVG](docs/architecture-2.svg) if your viewer does not render Mermaid. Location and route queries go to the relevant services; camera images do not. Tile requests also reveal the viewed map area to the tile provider.
+
+Users can search explicitly with the magnifier/Enter, type `latitude,longitude`, choose one of ten curated destinations, or place A/B pins. Pin controls support drag-and-drop and tap-then-place; existing markers are draggable. Editing an endpoint invalidates the previous route and any pending result. Geolocation permission is requested only by **My location**.
+
+The curated records in [landmarks.ts](src/maps/landmarks.ts) distinguish the city museum at 65 Lý Tự Trọng, the Tuệ Thành/Thiên Hậu temple in Cholon, and the Bến Dược entrance for Củ Chi. Củ Chi is marked as a separate excursion; the cathedral pin is an exterior viewpoint. A map coordinate does not guarantee an open entrance, and the ten sites are not proposed as one walk.
 
 ### Walking and motorbike
 
-Valhalla routes using `pedestrian` / `motor_scooter` with `shortest:true`; motor-scooter routing also disables hierarchy pruning. There is no car-profile substitution. Distance is optimized within the engine's OSM graph/access model, not every possible real-world road. Bounds: lat `[10.25,11.4]`, lon `[106.15,107.4]`, up to 60 km straight-line separation.
+Valhalla uses `pedestrian` and `motor_scooter` respectively, with `shortest: true`; motor-scooter routing also disables hierarchy pruning. Distance is optimized within the provider's OSM graph and access rules. Requests are limited to latitude `[10.25, 11.4]`, longitude `[106.15, 107.4]`, and 60 km straight-line separation.
 
-The response contains geometry, distance/time and structured maneuvers. English uses upstream English instructions. Other locales deterministically translate maneuver types, preserving street names and roundabout exit numbers. This avoids depending on availability of every upstream language. It is concise route guidance, not continuously tracked navigation. Times exclude live traffic.
+Responses contain route geometry, distance, estimated time and maneuvers. English uses upstream instructions. Vietnamese and the other locales translate structured maneuver types, preserving source street names and roundabout exit numbers. There is no live traffic or continuous turn-by-turn position tracking.
 
 ### Bus and metro
 
-`public/data/hcm-transit.json` is an attributed EBMS snapshot with 5,721 stops, 334 directed bus variants and two Metro 1 directions. The result shows its date. Source status flags are handled conservatively: Văn Thánh is labelled “Chưa khai thác” by the API, so local boarding/alighting is excluded without asserting that the real station is closed.
+The committed EBMS snapshot contains 5,721 stops, 334 directed bus variants and two Metro 1 directions; results show the snapshot date. Source flags are handled conservatively. For example, the API labels Văn Thánh as “Chưa khai thác”, so the snapshot excludes local boarding/alighting there without asserting that the real station is closed.
 
-The worker builds stop nodes and directed line-position nodes. A binary min-heap Dijkstra minimizes generalized cost:
+The transit worker builds stop nodes and directed line-position nodes, then searches with a binary min-heap Dijkstra. It uses this preference score, in metre-equivalent units:
 
 ```text
-inter-stop ride distance + 4 × walking distance + 1200 × boardings
+score = ride distance between stops + 4 × walking distance + 1200 × boardings
 ```
 
-Constraints: nearest 12 stops within 1 km of each endpoint, transfers within 240 m, at most three boardings/two transfers, preliminary walking budget 2,400 m. Boarding must include a ride edge before alighting. Shape matching advances monotonically along the line, including loops.
+The walking multiplier discourages long walks; the boarding penalty discourages transfers. For example, 1,000 m of riding, 100 m of walking and one boarding score `1000 + 400 + 1200 = 2600`. That is a search score, not a 2.6 km trip or a travel-time estimate.
 
-The UI verifies proposed walking legs through Valhalla: maximum 1,400 m access/egress and 650 m per transfer. Failed connectors are blocked; up to four alternatives are tried. Verified street geometry replaces straight connectors. This is a constrained snapshot planner using heuristic ride distances, **not an earliest-arrival engine or globally optimal bus journey guarantee**. There are no wait times, fares, timetable, last-service or live disruption data. Check stop signs and direction.
+Initial candidates use the nearest 12 stops within 1 km of each endpoint, transfers within 240 m, up to three boardings/two transfers, and a 2,400 m straight-line walking budget. A boarding must include a ride edge before alighting. Line-shape clipping advances monotonically through stop positions, including loops.
 
-```powershell
-node scripts/fetch-transit.mjs
-```
+The UI verifies proposed walking legs against Valhalla's street network, allowing up to 1,400 m access/egress and 650 m per transfer. Failed connections are blocked and up to four alternatives are tried. Verified geometry replaces straight connectors; the final walking total may exceed the preliminary straight-line budget. Ride costs also use approximate inter-stop distances, so this constrained snapshot search does not guarantee a globally optimal or earliest-arrival journey.
 
-The importer throttles requests, resumes cached work for up to 24 hours, and never runs implicitly during builds. Map API requests use a shared Mongo lease (~1 request/1.15 seconds/provider), 24-hour caching, 10/14-second upstream timeouts and 150 requests/IP/hour. Community services serve this free, low-traffic public demo; higher traffic needs suitable hosting/providers.
+There are no fares, timetable, wait times, last-service or live-disruption data. Users must check stop signs, direction and operating service. Refresh the public dataset explicitly with `node scripts/fetch-transit.mjs`; the importer throttles requests, resumes work cached for up to 24 hours, and does not run during builds.
+
+The map API caches responses for 24 hours and uses MongoDB leases to space upstream requests by about 1.15 seconds per provider. It allows 150 map requests/IP/hour, with 10-second search and 14-second route timeouts. Community providers serve this free, low-traffic demo; higher traffic needs suitable providers or self-hosting.
 
 ## Languages and interface
 
-Each fresh entry asks for English, Korean, Simplified Chinese, Japanese or Russian. English is the base UI. The previous preference highlights its choice without bypassing selection. **Library → Language** changes locale without clearing room access/references.
+Each fresh entry offers English, Vietnamese, Korean, Simplified Chinese, Japanese and Russian. English remains the default. The last choice is highlighted but does not bypass the entry screen. **Library → Language** changes the interface without clearing the current room or reference set.
 
-| Locale | Display / body fonts |
+| Language | Display / body fonts |
 | --- | --- |
-| English | Phudu / Be Vietnam Pro |
+| English and Vietnamese | Phudu / Be Vietnam Pro, with Vietnamese glyphs |
 | Korean | Noto Serif KR Variable |
 | Simplified Chinese | Noto Serif SC Variable |
 | Japanese | Noto Serif JP Variable |
-| Russian | Oswald / PT Sans, with Cyrillic subsets |
+| Russian | Oswald / PT Sans, including Cyrillic |
 
-Locale CSS loads on selection. Self-hosted WOFF2 unicode subsets avoid downloading entire CJK families for English users. Footage labels, street/stop names and headsigns remain proper names. Catalog tests check all five translations and placeholder parity. A runtime adapter translates legacy worker/server progress; unknown exceptions show a localized retry message instead of internal details.
+CJK/Cyrillic font CSS loads on selection. Catalog checks cover every locale and interpolation parameter. Vietnamese runtime messages use registered source templates; unexpected messages still receive a safe localized fallback. Footage labels, street/stop names and line headsigns retain their source proper names. Map tile text and browser permission prompts are outside the app's translation catalog.
 
-Paper, ink green, vermilion and editorial type accompany editable original SVG ornaments. The landing presents exactly two role actions after language selection. Camera dominates the workspace; library/QR/evaluation live in a focus-trapped drawer. Mobile inputs remain 16 px; controls target 44 px. Reduced-motion preferences disable curtains/typewriter. Touch point selection complements dragging. See the audit for tested viewport sizes and physical-device limitations.
+The paper/ink interface uses editable SVG ornaments, including a temporary dragon recreated from the user's sketch. Camera occupies most of the workspace; library, QR and evaluation use a focus-trapped drawer. Mobile inputs are at least 16 px and main controls target 44 px. Reduced motion bypasses the animated curtains/typewriter. See the linked audits for tested viewports and the limits of synthetic camera tests.
 
-## Deployment and security boundaries
+## Deployment and troubleshooting
 
-GitHub `main` connects to Vercel project `nosleepclub-hist`; Vite outputs `dist`, functions run in `sin1` with a 30-second limit. GitHub Actions checks types, tests, build and dependency vulnerabilities. Verify both CI and the Vercel deployment for the same commit SHA.
+GitHub `main` is connected to Vercel project `nosleepclub-hist`. Builds output `dist`; functions run in `sin1` with a 30-second limit. GitHub Actions runs typecheck, tests, build and dependency audit. A release is complete only when CI passes, Vercel is READY for the same commit, and the public alias passes an HTTPS smoke check.
 
-Production stores `MONGODB_URI` as a sensitive server variable. Previews lack the production credential and remain protected. Atlas M0 is in the separate `NoSleepClub_HIST` test project with a database-scoped read/write user. The owner authorized `0.0.0.0/0` network access for this test because Vercel egress IPs vary; TLS and credentials remain required. Production needs an appropriate network arrangement and narrower access controls.
+`MONGODB_URI` is a sensitive production server variable. Protected previews do not receive that credential. Atlas M0 is in the separate `NoSleepClub_HIST` test project with a database-scoped read/write user. The owner approved `0.0.0.0/0` network access for this test because Vercel egress IPs vary; TLS and credentials remain required.
 
-CSP restricts page scripts/fonts to self, permits WASM and limits browser model-delivery hosts. OpenCV bindings require worker-specific `unsafe-eval`; the page does not receive it. Framing/MIME sniffing are disabled. Camera/geolocation are self-only; microphone is denied. A leaked room capability or compromised browser storage exposes that room. The POC has no identity provider, account recovery, operator console or production service guarantee.
+CSP limits scripts/fonts to self and allows the model-delivery hosts. OpenCV requires `unsafe-eval` only in its worker policy. Framing and MIME sniffing are disabled; camera/geolocation are self-only and microphone access is denied. Room-key leakage or compromised browser storage can expose that room. Identity-based accounts, key recovery, an operator console and production service guarantees are not implemented.
 
-## References
+| Symptom | Check |
+| --- | --- |
+| Camera will not start | Use HTTPS or localhost, allow site camera permission, and close other apps using the camera |
+| Model is still preparing | First-use downloads require a network connection; backbone startup is separate from recording duration |
+| A phone has no references | Open the room QR from Dev; the generic app QR grants no room access |
+| Camera displays `...` | Check lighting, sharpness and visual overlap; add a clearer reference rather than treating a low score as a known place |
+| Saving fails | Keep/download the draft, check connectivity and storage limits, then retry; remove unused/pending clips in Dev |
+| Maps are unavailable | Check API health, provider availability and rate limits; try a nearby street point or explicit coordinates |
 
-* [DINOv2](https://github.com/facebookresearch/dinov2), [Transformers.js](https://huggingface.co/docs/transformers.js/)
-* [OpenCV feature matching / homography](https://docs.opencv.org/4.x/d1/de0/tutorial_py_feature_homography.html)
-* [Valhalla API and maneuver enum](https://valhalla.github.io/valhalla/api/route/api-reference/), [Photon](https://github.com/komoot/photon)
-* [OpenStreetMap attribution](https://www.openstreetmap.org/copyright), [OSM France](https://www.openstreetmap.fr/)
-* [Research](docs/research.md), [recognition validation plan](docs/validation.md), [five-second audit](docs/audit-five-second.md), [earlier map/UI audit](docs/audit-indochine-maps.md), [translation and motion review](docs/translation-review.md)
+## References and verification records
 
-Earlier documents preserve their language and version context; they do not override current code or benchmark untested phones/real-world scenes.
+* [DINOv2](https://github.com/facebookresearch/dinov2), [Transformers.js](https://huggingface.co/docs/transformers.js/), [OpenCV feature homography](https://docs.opencv.org/4.x/d1/de0/tutorial_py_feature_homography.html)
+* [Valhalla API](https://valhalla.github.io/valhalla/api/route/api-reference/), [Photon](https://github.com/komoot/photon), [OSM attribution](https://www.openstreetmap.org/copyright), [OSM France](https://www.openstreetmap.fr/)
+* [Technical research](docs/research.md), [recognition validation](docs/validation.md), [five-second audit](docs/audit-five-second.md), [map/UI audit](docs/audit-indochine-maps.md), [localization audit](docs/audit-localization.md), [translation/motion review](docs/translation-review.md), [Vietnamese and README verification](docs/audit-vietnamese-readme.md)
+
+Historical audits describe the versions they tested. Current behavior is defined by the code; synthetic tests do not establish real-world recognition accuracy or current transit operation.

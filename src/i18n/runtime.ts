@@ -1,4 +1,5 @@
 import { LOCALES, type Locale } from './catalog';
+// Vietnamese is the registered source protocol; these five columns translate it.
 type Row = readonly [string, string, string, string, string];
 const messages: [string[], Row][] = [
   [['Chọn vai trò để bắt đầu phiên test.'], ['Choose a role to begin.', '시작할 역할을 선택하세요.', '选择身份以开始。', '役割を選んで開始してください。', 'Выберите роль для начала.']],
@@ -74,16 +75,17 @@ const dynamic: [RegExp, Row][] = [
   [/^(\d+) frame kiểm thử riêng: (\d+) đúng, (\d+) nhầm, (\d+) chưa chắc\. Cảnh lạ bị nhận nhầm: (\d+)\..*$/, ['Held-out frames: $1. Correct: $2; wrong: $3; uncertain: $4. Unknown scenes accepted: $5. Applies only to this test set; frames from one clip are correlated.', '독립 검증 프레임: $1. 정답: $2, 오답: $3, 불확실: $4. 미지 장면 오인식: $5. 이 검증 데이터에만 해당하며 같은 영상의 프레임은 상관관계가 있습니다.', '独立测试画面：$1。正确：$2；错误：$3；不确定：$4。未知场景误识别：$5。仅适用于此测试集，同一视频的画面具有相关性。', '検証フレーム：$1。正解：$2、誤り：$3、不確実：$4。未知の風景の誤認識：$5。この検証データのみの結果で、同じ動画のフレームには相関があります。', 'Проверочных кадров: $1. Верно: $2; неверно: $3; неуверенно: $4. Принято незнакомых сцен: $5. Результат относится только к этому набору; кадры одного ролика взаимосвязаны.']],
 ];
 const fallback: Row = ['The action could not be completed. Please retry.', '작업을 완료할 수 없습니다. 다시 시도하세요.', '无法完成操作，请重试。', '操作を完了できません。再試行してください。', 'Не удалось выполнить действие. Повторите попытку.'];
+const vietnameseMessage = (text: string) => text.replace(/\bfootage\b/gi, 'video').replace(/\bframe\b/gi, 'khung hình').replace(/\bUser\b/g, 'Người dùng').replace(/\bDev\b/g, 'Nhà phát triển').replace(/\bModel\b/g, 'Mô hình').replace(/\bmodel\b/g, 'mô hình');
 export function localizeMessage(text: string, locale: Locale): string {
   if (!text) return '';
   const index = LOCALES.indexOf(locale), direct = lookup.get(text);
-  if (direct) return direct[index];
-  for (const [pattern, row] of dynamic) if (pattern.test(text)) return text.replace(pattern, row[index]);
+  if (direct) return locale === 'vi' ? vietnameseMessage(text) : direct[index];
+  for (const [pattern, row] of dynamic) if (pattern.test(text)) return locale === 'vi' ? vietnameseMessage(text) : text.replace(pattern, row[index]);
   const details = text.match(/^(\d+) chi tiết khớp(?: · (\d+) ms)?$/);
   if (details) return [
-    `${details[1]} matching details`, `일치 특징 ${details[1]}개`, `${details[1]}个匹配细节`, `一致する特徴 ${details[1]}点`, `Совпавших деталей: ${details[1]}`,
+    `${details[1]} matching details`, `일치 특징 ${details[1]}개`, `${details[1]}个匹配细节`, `一致する特徴 ${details[1]}点`, `Совпавших деталей: ${details[1]}`, `${details[1]} chi tiết khớp`,
   ][index] + (details[2] ? ` · ${details[2]} ms` : '');
   const latency = text.match(/^(.*) · (\d+) ms$/);
   if (latency) return localizeMessage(latency[1], locale) + ` · ${latency[2]} ms`;
-  return fallback[index];
+  return locale === 'vi' ? 'Chưa thực hiện được thao tác. Vui lòng thử lại.' : fallback[index];
 }

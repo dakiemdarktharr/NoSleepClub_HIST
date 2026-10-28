@@ -61,6 +61,7 @@ html[data-locale=ko] h1,html[data-locale=zh] h1,html[data-locale=ja] h1{letter-s
 .language-choice:hover{background:#d8decd99}
 .language-rule{height:5px;border-block:1px solid var(--line)}
 .language-ko{font-family:'Noto Serif KR Variable','Batang',serif}.language-zh{font-family:'Noto Serif SC Variable','SimSun',serif}.language-ja{font-family:'Noto Serif JP Variable','Yu Mincho',serif}.language-ru{font-family:'PT Sans',sans-serif}
+.language-vi{font-family:'Be Vietnam Pro',sans-serif}
 .language-settings{border-bottom:1px solid var(--line);margin-bottom:20px;padding-bottom:10px}
 .language-settings summary{font-size:13px;cursor:pointer;min-height:44px;padding:12px 0}
 .language-settings .language-choice{min-height:52px}.language-settings .language-choice>span:first-child{font-size:17px}
@@ -117,9 +118,9 @@ html[data-locale=ko] h1,html[data-locale=zh] h1,html[data-locale=ja] h1{letter-s
   .language-kicker{font-size:8px}.language-masthead{font-size:10px}.language-choice{grid-template-columns:1fr 70px 16px}.language-choice small{font-size:10px}
 }
 @media(max-width:390px){
-  html[data-locale=ru] .role-choices{flex-direction:column;align-items:center}
-  html[data-locale=ru] .role-button{width:100%;max-width:280px;flex:auto}
-  html[data-locale=ru] .role-button span{white-space:nowrap}
+  html:is([data-locale=ru],[data-locale=vi]) .role-choices{flex-direction:column;align-items:center}
+  html:is([data-locale=ru],[data-locale=vi]) .role-button{width:100%;max-width:280px;flex:auto}
+  html:is([data-locale=ru],[data-locale=vi]) .role-button span{white-space:nowrap}
 }
 @media(max-height:540px) and (orientation:landscape){
   .title-screen{padding-block:90px 35px}.title-ornament{width:180px;margin-bottom:0}.title-lines{transform:scale(.7);transform-origin:center;margin-block:-22px}.role-choices{margin-top:8px}

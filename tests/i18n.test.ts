@@ -4,10 +4,10 @@ import { localizeMessage } from '../src/i18n/runtime';
 import { LANDMARKS, landmarkPlace, landmarkSource } from '../src/maps/landmarks';
 import { maneuverText } from '../src/maps/maneuvers';
 describe('locale contracts',()=>{
-  it('supplies all five locales and the same interpolation parameters for every UI message',()=>{
+  it('supplies every locale and the same interpolation parameters for every UI message',()=>{
     const placeholders=(text:string)=>[...text.matchAll(/\{(\w+)\}/g)].map(match=>match[1]).sort();
     for(const [key,row] of Object.entries(catalog)){
-      expect(row.length,key).toBe(5);
+      expect(row.length,key).toBe(LOCALES.length);
       for(const text of row){expect(text.trim().length,key).toBeGreaterThan(0);expect(placeholders(text),key).toEqual(placeholders(row[0]));}
     }
   });
@@ -16,10 +16,10 @@ describe('locale contracts',()=>{
   });
   it('localizes actual upload, inference and evaluation progress with and without ellipses',()=>{
     const statuses=['Đang lưu video 1/4','Đang tải video 2/4','Đang lưu frame 6/8','Đang học hình ảnh 3/8…','Đang tải model: 42%','18 chi tiết khớp · 892 ms','Đang kiểm tra đường đi bộ 1/2…'];
-    for(const locale of LOCALES)for(const text of statuses){const output=localizeMessage(text,locale);expect(output).not.toBe(localizeMessage('unknown',locale));expect(output).not.toContain('Đang');expect(output).toMatch(/\d/);}
+    for(const locale of LOCALES)for(const text of statuses){const output=localizeMessage(text,locale);expect(output).not.toBe(localizeMessage('unknown',locale));if(locale!=='vi')expect(output).not.toContain('Đang');expect(output).toMatch(/\d/);}
   });
   it('does not show server exceptions, credentials or untranslated error text to users',()=>{
-    for(const locale of LOCALES){expect(localizeMessage('driver exception with mongodb://private',locale)).toBe(localizeMessage('unknown',locale));expect(localizeMessage('',locale)).toBe('');}
+    for(const locale of LOCALES){expect(localizeMessage('driver exception with mongodb://private',locale)).toBe(localizeMessage('unknown',locale));expect(localizeMessage('Lỗi máy chủ: mongodb://private',locale)).toBe(localizeMessage('unknown',locale));expect(localizeMessage('',locale)).toBe('');}
   });
 });
 describe('selected destinations and structured navigation',()=>{
@@ -34,7 +34,7 @@ describe('selected destinations and structured navigation',()=>{
   it('localizes turns from types while preserving street names and roundabout exits',()=>{
     const turn={text:'Turn right onto Pasteur.',meters:60,type:10,streets:['Pasteur']};
     expect(maneuverText(turn,'en')).toBe(turn.text);
-    for(const locale of ['ko','zh','ja','ru'] as const){expect(maneuverText(turn,locale)).not.toContain('Turn');expect(maneuverText(turn,locale)).toContain('Pasteur');expect(maneuverText({...turn,type:26,exit:3},locale)).toContain('3');}
+    for(const locale of LOCALES.filter(value=>value!=='en')){expect(maneuverText(turn,locale)).not.toContain('Turn');expect(maneuverText(turn,locale)).toContain('Pasteur');expect(maneuverText({...turn,type:26,exit:3},locale)).toContain('3');}
     expect(maneuverText({...turn,type:15},'zh')).toContain('左转');
   });
 });
