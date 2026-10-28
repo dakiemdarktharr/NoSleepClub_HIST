@@ -1,19 +1,18 @@
-// Original vector ornaments, informed by the user's tile, cloud and dragon references.
+// Editable ornaments. The dragon traces the user's temporary hand-drawn reference.
 export function CloudDragon({ className = '' }: { className?: string }) {
-  return <svg className={className} viewBox="0 0 760 190" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    {/* One continuous, tapering body; details stay inside its silhouette. */}
-    <path d="M80 132c35 8 57-8 80-30 31-30 55-45 85-30 34 17 40 65 78 64 39-1 48-70 91-70 43 0 51 54 91 50 30-3 41-35 60-50l22 19c-21 18-31 52-69 57-49 7-65-51-101-51-32 0-43 67-88 68-47 1-56-56-88-68-22-9-45 3-72 23-31 22-58 29-89 18Z"/>
-    <path d="M81 132c28 0 37-12 45-25-1 14-9 23-21 28m52-30 9 11m8-25 10 11m9-24 8 12m12-20 4 13m15-14-1 13m17-9-6 12m19-1-9 9m19 3-10 7m18 6-11 6m20 9-7 10m22-10-1 14m22-17 7 12m10-25 10 10m3-29 11 7m3-28 12 5m4-25 10 9m10-23 6 12m17-16v14m20-10-5 13m21-3-9 11m21 3-11 8m20 7-10 9m22 5-7 12m24-7-1 13m23-16 5 12m12-24 9 10m6-27 11 8" strokeWidth="1"/>
-    {/* Flame-like dorsal spines follow the upper curve. */}
-    <path d="m182 84 4-15 9 7 10-17 7 12 12-13 4 12m53 36 2-16 12 9m55 26 12 4 1-17m35-34 1-15 12 4 8-17 9 13 12-11 4 15m46 35 1-17 13 10m42 16 12 5 4-16m16-21 9 1 1-15"/>
-    {/* Two pairs of articulated legs and three-toed claws. */}
-    <path d="m252 103-3 24-20 14 8 17m-8-17-8 10m16 7 12 1m-12-1-2 9m2-9-9 7m94-21 13 21 24-2 7 12m-7-12 9-7m-2 19 11 1m-11-1 1 9m-1-9-7 6m103-74-1 24 17 14-6 14m6-14 9 5m-15 9-9 5m9-5 4 9m-4-9-3 10m101-23 12 21 20-1 8 12m-8-12 8-7m0 19 11 1m-11-1 1 9m-1-9-7 6"/>
-    {/* Long muzzle, visible eye, antler horns, mane and flowing whiskers. */}
-    <path d="M562 66c-4-19 11-39 32-39 15 0 21 10 28 16l31 1 12 10-5 13-32 3c-5 14-15 23-30 21l-15-8m-20-18-13-9 7-9-10-8 17-1-3-13 14 8 4-13 8 8"/>
-    <path d="m589 30-4-17 10 5 4-13m10 31 10-19 10 1 4-11m-17 17 14 2m-47 22 9-7 16 7-14 7-11-7Zm3-1 5 3 4-3m33 9 15 1m-26 13 7-7h20m-23 11 3 7 8-9m-47 6 7 7 11-5m-26-19-8 10 9 7m-10-9-12 4"/>
-    <path d="M652 49c28-25 54-18 57-5 3 10-9 14-14 6m-40 14c31 0 45 12 39 24-5 11-22 7-20-2m-74 4c-9 18-26 21-43 15m37-15c-1 16-14 27-29 29m35-88c-13-16-30-16-40-9" strokeWidth="1.2"/>
-    {/* Quiet cloud curls and architectural fretwork frame the animal. */}
-    <path d="M15 151h47v-20H37v-17h31m621 37h56v-20h-25v-17h25M19 162h54m612 0h60M29 62c-5-14 15-24 23-11 12-10 29 3 21 14-6 9-17 4-16-3m631 58c18-9 30 5 24 14m-378-95c-5-14 11-22 19-12 9-15 30-7 29 5m-179 129c11-14 25-12 31 0m-52 8h76" strokeWidth="1.1"/>
+  return <svg className={className} viewBox="100 25 1245 545" fill="none" stroke="currentColor" strokeWidth="16" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" data-artwork="sketch-dragon-placeholder">
+    {/* Long body and upright head retain the reference's deliberately simple outline. */}
+    <path d="M220 383c9-36 27-79 59-102l33-21 26-11h138c24 8 54 35 86 62 32 28 61 51 96 60h62l61-22c38-10 62-24 84-52l29-52c10-18 16-36 20-54v-57c4-19 21-34 39-50 13-6 25-7 40-6h75c17 3 31 16 37 28v78h53v41l-26 30h-61l-24-14c-5 35-22 65-38 94l-21 35c-18 24-40 40-67 52l-100 45-24 11h-99c-37-4-78-16-116-29l-73-30c-31-17-54-45-82-68l-32-23h-52c-23 0-42 9-61 21l-54 35Z"/>
+    {/* Stepped dorsal ridge, forked tail and four loosely sketched claws. */}
+    <path d="m312 261 20-13v-16h92v-38l43 19 30 20 17-12h9l15 22 6 12h18l12-5 5 43 34-11h9l23 29 28-9h22v32l33-25h10l12 27 14-33 23 12h16v-31h18v-35h17v-47h17l-9-16 8-9 21-7v-23l-18 1 15 11"/>
+    <path d="m253 310-77 31 31 8-53 73 64-18-26 20-67 71 66-24-7 51 15-33 8 32 3-49 21-28 12 26 10-61 16-35 1 55"/>
+    <path d="m476 405-25 17-5 34-14 26 3-37-29 29h-19l40-35h-39m67-20 24 5-23 14m106-32v82l-28 27m29-28 43 14 16 10 4 18m-22-28-2 41m-11-43-7 45m-36-102-30-1c-6 12 3 19 32 29"/>
+    <path d="m921 260-1 79 17 47m-15-92 37-26m-35 35 49-12m-51 37h40m-39 18-24 16-8 15 35-13m-20 12-15 21 25-11m-10 0-14 20 24-12m81-17 26 24 24 48 23 32m-48-57-22 2 11 22 34-12m-13 20-2 25m13-25 25-27 15-7m-25 32 17 3"/>
+    {/* Two short horns, heavy brow, dot eye, muzzle, tongue and hanging whiskers. */}
+    <path d="m955 80-24-30-2-5m72 31V49l-3-5m74 206v-37h55m28 20 45 15 15 10v16h-17l-22-8-30-15m-68 4 8 34 6 32m-29-64 8 41v39l-9 5"/>
+    <path d="M1011 130c16-11 40-4 56 8l3 8h-28l-16-14Z" fill="currentColor"/>
+    <circle cx="1040" cy="169" r="8.5" fill="currentColor" stroke="none"/>
+    <path d="M1193 325c8-13 20-13 38-8l42 10c31 12 47 25 52 45l1 40c-7 22-20 43-43 53-24 10-51 2-72-5-24-9-36-30-40-54v-64l9-26c13-8 26-9 38-4" strokeWidth="13"/>
   </svg>;
 }
 export function Lantern() {

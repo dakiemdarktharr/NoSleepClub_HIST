@@ -8,13 +8,13 @@ export function useButtonMotion(dependency: unknown) {
     const targets = [...document.querySelectorAll<HTMLButtonElement>('button')];
     const clearHover = hover(targets, element => {
       if ((element as HTMLButtonElement).disabled) return;
-      animate(element, { scale: 1.025 }, { duration: .18 });
-      return () => { animate(element, { scale: 1 }, { duration: .2 }); };
+      animate(element, { scale: 1.012 }, { duration: .28, ease: 'easeInOut' });
+      return () => { animate(element, { scale: 1 }, { duration: .32, ease: 'easeInOut' }); };
     });
     const clearPress = press(targets, element => {
       if ((element as HTMLButtonElement).disabled) return;
-      animate(element, { scale: .96 }, { type: 'spring', stiffness: 600, damping: 30 });
-      return () => { animate(element, { scale: 1 }, { type: 'spring', stiffness: 430, damping: 26 }); };
+      animate(element, { scale: .985 }, { duration: .22, ease: 'easeOut' });
+      return () => { animate(element, { scale: 1 }, { duration: .32, ease: 'easeOut' }); };
     });
     return () => { clearHover(); clearPress(); };
   }, [dependency]);
@@ -32,10 +32,10 @@ export function ChangingTitle() {
     let timer: ReturnType<typeof setTimeout>;
     const tick = () => {
       if (deleting) { letters--; setText(glyphs[word].slice(0, letters).join('')); if (!letters) { deleting = false; word = (word + 1) % words.length; } }
-      else { letters++; setText(glyphs[word].slice(0, letters).join('')); if (letters === glyphs[word].length) { deleting = true; timer = setTimeout(tick, 3400); return; } }
-      timer = setTimeout(tick, deleting ? 65 : 120);
+      else { letters++; setText(glyphs[word].slice(0, letters).join('')); if (letters === glyphs[word].length) { deleting = true; timer = setTimeout(tick, 5000); return; } }
+      timer = setTimeout(tick, deleting ? 100 : 165);
     };
-    timer = setTimeout(tick, 3800); return () => clearTimeout(timer);
+    timer = setTimeout(tick, 5200); return () => clearTimeout(timer);
   }, [locale]);
   useEffect(() => {
     const element = ref.current; if (!element) return;
@@ -68,15 +68,15 @@ export function useCurtain() {
         const x = event?.detail ? event.clientX : innerWidth / 2, y = event?.detail ? event.clientY : innerHeight / 2;
         const radius = Math.hypot(innerWidth, innerHeight);
         iris.current.style.visibility = 'visible'; iris.current.style.opacity = '1';
-        await animate(iris.current, { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] }, { duration: .42, ease: [.22, 1, .36, 1] });
+        await animate(iris.current, { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] }, { duration: .72, ease: [.45, 0, .55, 1] });
         await covered();
-        await animate(iris.current, { opacity: [1, 0] }, { duration: .24 });
+        await animate(iris.current, { opacity: [1, 0] }, { duration: .48, ease: 'easeInOut' });
         iris.current.style.visibility = 'hidden';
       } else if (wipes.current) {
         const panels = [...wipes.current.children]; wipes.current.style.visibility = 'visible';
-        await animate(panels, { scaleY: [0, 1] }, { duration: .25, delay: stagger(.045), ease: [.22, 1, .36, 1] });
+        await animate(panels, { scaleY: [0, 1] }, { duration: .48, delay: stagger(.065), ease: [.45, 0, .55, 1] });
         await covered();
-        await animate(panels, { scaleY: [1, 0] }, { duration: .25, delay: stagger(.035), ease: [.22, 1, .36, 1] });
+        await animate(panels, { scaleY: [1, 0] }, { duration: .48, delay: stagger(.055), ease: [.45, 0, .55, 1] });
         wipes.current.style.visibility = 'hidden';
       }
     } finally { locked.current = false; setTransitioning(false); }

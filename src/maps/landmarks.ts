@@ -5,7 +5,7 @@ import type { Place } from './types';
 type Landmark = { id: string; local: string; names: readonly [string,string,string,string,string]; lat: number; lon: number; note?: 'excursion' | 'exterior' };
 export const LANDMARKS: readonly Landmark[] = [
   { id:'W39598493', local:'Dinh Độc Lập', names:['Independence Palace','통일궁','独立宫','統一会堂','Дворец Независимости'], lat:10.7770348, lon:106.695488 },
-  { id:'N5922616581', local:'Địa đạo Củ Chi · Bến Dược', names:['Cu Chi Tunnels · Ben Duoc','꾸찌 터널 · 벤즈억','古芝地道 · 槟药','クチトンネル · ベンズオック','Туннели Кути · Бензыок'], lat:11.1428861, lon:106.4630985, note:'excursion' },
+  { id:'N5922616581', local:'Địa đạo Củ Chi · Bến Dược', names:['Cu Chi Tunnels · Bến Dược','꾸찌 터널 · Bến Dược','古芝地道 · Bến Dược','クチトンネル · Bến Dược','Туннели Кути · Bến Dược'], lat:11.1428861, lon:106.4630985, note:'excursion' },
   { id:'N3812282642', local:'Đài Kỷ Niệm Thích Quảng Đức', names:['Thich Quang Duc Memorial','틱꽝득 기념비','释广德纪念碑','ティック・クアン・ドック記念碑','Мемориал Тхить Куанг Дыка'], lat:10.774988, lon:106.6866162 },
   { id:'W808033616', local:'Bến Nhà Rồng', names:['Nha Rong Wharf','냐롱 부두','龙屋码头','ニャロン埠頭','Причал Няронг'], lat:10.7682843, lon:106.7066437 },
   { id:'W186249226', local:'Bảo tàng Chứng tích Chiến tranh', names:['War Remnants Museum','전쟁박물관','战争遗迹博物馆','戦争証跡博物館','Музей последствий войны'], lat:10.7793647, lon:106.6922806 },

@@ -215,6 +215,6 @@ CSP restricts page scripts/fonts to self, permits WASM and limits browser model-
 * [OpenCV feature matching / homography](https://docs.opencv.org/4.x/d1/de0/tutorial_py_feature_homography.html)
 * [Valhalla API and maneuver enum](https://valhalla.github.io/valhalla/api/route/api-reference/), [Photon](https://github.com/komoot/photon)
 * [OpenStreetMap attribution](https://www.openstreetmap.org/copyright), [OSM France](https://www.openstreetmap.fr/)
-* [Research](docs/research.md), [recognition validation plan](docs/validation.md), [five-second audit](docs/audit-five-second.md), [earlier map/UI audit](docs/audit-indochine-maps.md)
+* [Research](docs/research.md), [recognition validation plan](docs/validation.md), [five-second audit](docs/audit-five-second.md), [earlier map/UI audit](docs/audit-indochine-maps.md), [translation and motion review](docs/translation-review.md)
 
 Earlier documents preserve their language and version context; they do not override current code or benchmark untested phones/real-world scenes.

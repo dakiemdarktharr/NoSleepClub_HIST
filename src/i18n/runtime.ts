@@ -2,7 +2,8 @@ import { LOCALES, type Locale } from './catalog';
 type Row = readonly [string, string, string, string, string];
 const messages: [string[], Row][] = [
   [['Chọn vai trò để bắt đầu phiên test.'], ['Choose a role to begin.', '시작할 역할을 선택하세요.', '选择身份以开始。', '役割を選んで開始してください。', 'Выберите роль для начала.']],
-  [['Chờ camera và mẫu tham chiếu','Camera chưa bật','Camera đã tắt'], ['Waiting for camera and references', '카메라와 참조 영상 대기 중', '等待相机和参考样本', 'カメラと参照データを待機中', 'Ожидание камеры и образцов']],
+  [['Chờ camera và mẫu tham chiếu'], ['Waiting for camera and references', '카메라와 참조 영상 대기 중', '等待相机和参考样本', 'カメラと参照データを待機中', 'Ожидание камеры и образцов']],
+  [['Camera chưa bật','Camera đã tắt'], ['Camera off', '카메라 꺼짐', '相机已关闭', 'カメラはオフです', 'Камера выключена']],
   [['Camera trực tiếp'], ['Live camera', '실시간 카메라', '实时相机', 'ライブカメラ', 'Камера в реальном времени']],
   [['Bộ nhận diện đã sẵn sàng.','Bộ mẫu đã học và sẵn sàng nhận diện.'], ['Recognition is ready.', '인식 준비가 완료되었습니다.', '识别已就绪。', '認識の準備ができました。', 'Распознавание готово.']],
   [['Đang huấn luyện bộ phân loại từ footage đã lưu…','Đang chuẩn bị bộ mẫu đã học…','Đang chuẩn bị nhận diện…','Đang chuẩn bị bộ nhận diện…'], ['Preparing recognition…', '인식 준비 중…', '正在准备识别…', '認識を準備中…', 'Подготовка распознавания…']],
@@ -57,7 +58,7 @@ const messages: [string[], Row][] = [
   [['Đang tìm tuyến và trạm chuyển…'], ['Finding lines and transfers…', '노선 및 환승 검색 중…', '正在查找线路和换乘站…', '路線と乗り換えを検索中…', 'Поиск линий и пересадок…']],
   [['Không mở được bộ tìm tuyến. Hãy tải lại trang.','Tìm tuyến quá lâu. Vui lòng thử lại.','Chưa kết nối được bộ tìm đường. Vui lòng thử lại.','Chưa tải được dữ liệu tuyến. Vui lòng thử lại.'], ['Route service unavailable. Please retry.', '경로 서비스를 사용할 수 없습니다. 다시 시도하세요.', '路线服务暂不可用，请重试。', 'ルートサービスを利用できません。再試行してください。', 'Построение маршрута недоступно. Повторите попытку.']],
   [['Chưa tìm được đường phù hợp với phương tiện này. Hãy chọn lại điểm trên đường.'], ['No route for this mode. Place the points on accessible streets.', '이 교통수단의 경로가 없습니다. 접근 가능한 도로에 지점을 지정하세요.', '此方式暂无路线，请在可通行道路上选择起终点。', 'この移動手段のルートがありません。通行可能な道に地点を置いてください。', 'Маршрут для этого способа не найден. Выберите точки на доступных улицах.']],
-  [['Chưa tìm thấy tuyến phù hợp trong dữ liệu hiện có: tối đa 2 lần chuyển, trạm cách mỗi đầu không quá 1 km.'], ['No transit route in this snapshot: at most 2 transfers, stops within 1 km of each endpoint.', '현재 데이터에 경로가 없습니다. 환승 최대 2회, 양 끝에서 정류장까지 1km 이내입니다.', '当前数据中未找到路线：最多换乘2次，起终点距站点不超过1公里。', 'このデータにルートはありません。乗り換えは最大2回、両端から停留所まで1km以内です。', 'В снимке маршрут не найден: до 2 пересадок, остановки в 1 км от обеих точек.']],
+  [['Chưa tìm thấy tuyến phù hợp trong dữ liệu hiện có: tối đa 2 lần chuyển, trạm cách mỗi đầu không quá 1 km.'], ['No route found in this dataset within the limits: at most 2 transfers, stops within 1 km of each endpoint.', '현재 데이터와 조건에서 경로를 찾지 못했습니다. 환승은 최대 2회이며, 출발지와 목적지에서 정류장까지 1km 이내가 대상입니다.', '当前数据和条件下未找到路线：最多换乘2次，起终点距站点不超过1公里。', '現在のデータと条件では経路が見つかりません。乗り換えは2回まで、出発地・目的地から停留所まで1km以内が対象です。', 'В текущих данных не найден маршрут с учётом ограничений: не более 2 пересадок и не более 1 км от каждой конечной точки до остановки.']],
   [['Chưa xác minh được lối đi bộ tới trạm. Hãy thử điểm đi/đến gần trạm hơn.'], ['Could not verify walking access. Choose points nearer the stops.', '정류장까지 도보 접근을 확인하지 못했습니다. 정류장에 더 가까운 지점을 선택하세요.', '无法确认步行到站路线，请选择更靠近站点的位置。', '停留所への徒歩経路を確認できません。停留所に近い地点を選んでください。', 'Пеший доступ не подтверждён. Выберите точки ближе к остановкам.']],
 ];
 const lookup = new Map(messages.flatMap(([sources, row]) => sources.map(source => [source, row] as const)));
