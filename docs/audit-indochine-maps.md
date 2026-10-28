@@ -33,4 +33,10 @@ Camera User tiếp tục xử lý trên thiết bị. Maps chỉ gửi tên / t�
 - Tìm “Chợ Bến Thành”, “Nhà hát Thành phố” trả lựa chọn địa điểm thật; đi bộ 819 m và xe máy khoảng 1,0 km ở cặp điểm đã chọn. Metro 1 trả đúng ga lên Bến Thành, hướng Bến xe Suối Tiên, xuống Nhà hát Thành phố, có đường đi bộ hai đầu. Giá trị chỉ đúng cho tọa độ được chọn trong phép thử.
 - Browser đã nhận một hành trình hai bus có số 18 → 44, xuống/lên ở Trường CĐKT Cao Thắng, có đường đi bộ cuối. Đây là kiểm tra tính toán từ snapshot; không xác nhận xe đang chạy tại thời điểm người đọc mở app.
 
-CI, production deployment và kiểm tra sau deploy được ghi nhận trong commit bàn giao. Chưa đo camera phần cứng của người dùng và chưa xác nhận từng tuyến ở thực địa.
+## Xác nhận production
+
+Commit ứng dụng `4829c45` và sửa đóng gói font `44ae8f0` đã qua CI (26 tests, typecheck, build, dependency audit). Deployment `dpl_U4stTbuKxBRLpaqUWs6VkKmPoHnf` READY, alias `nosleepclub-hist-connected.vercel.app`. Font không còn bị chặn do data URL; giữ CSP `font-src 'self'` bằng asset file riêng.
+
+Trên HTTPS production đã kiểm tra geocoding, tile có ảnh thật, đường đi bộ, xe máy và Metro 1 từ cặp điểm Bến Thành → Nhà hát Thành phố. Quay/lưu/huấn luyện một clip 5 giây thành công. Một context trình duyệt mới chỉ có read key đã nạp `fewshot-dinov2-v3` qua `workspace.get` + `model.get`, không tải `frames.get` hay train lại; nhận đúng cảnh tổng hợp, 145 chi tiết khớp, 964 ms suy luận trên máy thử. Không thấy lỗi console ở bản font đã sửa hoặc error/fatal trong cửa sổ runtime logs kiểm tra. Các fixture do mình tạo ở localhost và production đã được xóa. Bộ phân loại dẫn xuất của phòng có footage thật được cập nhật v3; video và frame gốc giữ nguyên.
+
+Chưa đo camera phần cứng của người dùng và chưa xác nhận từng tuyến ở thực địa. Không coi kết quả camera giả lập là accuracy của căn phòng thật.
