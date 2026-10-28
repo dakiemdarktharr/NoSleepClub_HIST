@@ -35,7 +35,9 @@ export function trainFewShot(frames: CatalogFrame[], sourceIds: string[]): Train
     }
     const neighbors = examples.map((frame, i) => Math.max(...examples.filter((_, j) => i !== j).map(other => cosine(frame.embedding, other.embedding)), .90)).sort((a, b) => a - b);
     const threshold = clamp(neighbors[Math.floor(neighbors.length * .1)] - .035, .88, .94);
-    classes.push({ label: examples[0].label, background: examples[0].background, prototypes: centers, threshold, fastThreshold: clamp(neighbors[Math.floor(neighbors.length * .1)] - .01, .95, .985), examples: examples.length });
+    const negatives = frames.filter(frame => classKey(frame.label, frame.background) !== classKey(examples[0].label, examples[0].background));
+    const nearestNegative = Math.max(0, ...examples.map(frame => Math.max(0, ...negatives.map(other => cosine(frame.embedding, other.embedding)))));
+    classes.push({ label: examples[0].label, background: examples[0].background, prototypes: centers, threshold, fastThreshold: clamp(Math.max(neighbors[Math.floor(neighbors.length * .1)] - .01, nearestNegative + .025), .95, .995), examples: examples.length });
     supports.push(...seedsFor(examples, supportLimit));
   }
   return { version: CLASSIFIER_VERSION, featureModel: MODEL, sourceIds: [...sourceIds].sort(), trainedAt: new Date().toISOString(), classes, supports };

@@ -27,6 +27,6 @@ export const framesSchema = z.object({ offset: z.number().int().min(0).max(MAX_F
 const unitVectorSchema = z.array(z.number().finite().min(-1.001).max(1.001)).length(384).refine(vector => Math.abs(Math.hypot(...vector) - 1) < .015);
 export const classifierSchema = z.object({
   version: z.literal(CLASSIFIER_VERSION), featureModel: z.literal(MODEL), sourceIds: z.array(idSchema).max(12), trainedAt: z.iso.datetime(),
-  classes: z.array(z.object({ label: z.string().trim().min(1).max(80), background: z.boolean(), prototypes: z.array(unitVectorSchema).min(1).max(3), threshold: z.number().min(.88).max(.94), fastThreshold: z.number().min(.95).max(.985), examples: z.number().int().min(1).max(960) })).max(12),
+  classes: z.array(z.object({ label: z.string().trim().min(1).max(80), background: z.boolean(), prototypes: z.array(unitVectorSchema).min(1).max(3), threshold: z.number().min(.88).max(.94), fastThreshold: z.number().min(.95).max(.995), examples: z.number().int().min(1).max(960) })).max(12),
   supports: z.array(featureSchema.and(z.object({ label: z.string().min(1).max(80), background: z.boolean(), footageId: idSchema }))).max(24),
 });

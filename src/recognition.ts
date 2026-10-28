@@ -30,10 +30,13 @@ export class TemporalGate {
   private label: string | null = null;
   private count = 0;
   private previousAt = 0;
+  private confirmed: string | null = null;
   push(prediction: Prediction, now = performance.now()): Prediction {
-    if (!prediction.label) { this.label = null; this.count = 0; this.previousAt = now; return prediction; }
+    if (!prediction.label) { this.label = null; this.confirmed = null; this.count = 0; this.previousAt = now; return prediction; }
     this.count = prediction.label === this.label && now - this.previousAt < 5000 ? this.count + 1 : 1;
     this.label = prediction.label; this.previousAt = now;
-    return prediction.immediate || this.count >= 2 ? prediction : { ...prediction, label: null, reason: 'Đang xác nhận thêm một frame' };
+    const switching = this.confirmed && this.confirmed !== prediction.label && prediction.inliers < 24;
+    if ((!switching && prediction.immediate) || this.count >= 2) { this.confirmed = prediction.label; return prediction; }
+    return { ...prediction, label: null, reason: 'Đang xác nhận thêm một frame' };
   }
 }

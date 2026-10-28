@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { CHUNK_SIZE } from '../src/shared.js';
 import { database } from './db.js';
 import { createFootageSchema, framesSchema, classifierSchema, idSchema, keySchema } from './validation.js';
+import { mapsAction, MapsError } from './maps.js';
 
 type Request = IncomingMessage & { body?: unknown };
 class HttpError extends Error { constructor(public code: number, message: string) { super(message); } }
@@ -41,6 +42,7 @@ async function footageFor(db: Db, roomId: string, value: unknown) {
 export async function dispatch(db: Db, req: Request, input: unknown): Promise<unknown> {
   const payload = z.record(z.string(), z.unknown()).parse(input);
   const action = z.string().max(40).parse(payload.action);
+  if (action === 'maps.search' || action === 'maps.route') return mapsAction(db, req, payload);
   if (action === 'workspace.create') {
     const address = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'local').split(',')[0].trim();
     const bucket = hash(address + ':' + Math.floor(Date.now() / 3600000));
@@ -148,7 +150,7 @@ export default async function handler(req: Request, res: ServerResponse) {
     const output = await dispatch(await database(), req, await readBody(req));
     res.statusCode = 200; res.end(JSON.stringify(output));
   } catch (error) {
-    const known = error instanceof HttpError;
+    const known = error instanceof HttpError || error instanceof MapsError;
     const invalid = error instanceof z.ZodError || error instanceof SyntaxError || error instanceof TypeError;
     res.statusCode = known ? error.code : invalid ? 400 : 503;
     // Never return driver errors: MongoDB errors can contain connection details.

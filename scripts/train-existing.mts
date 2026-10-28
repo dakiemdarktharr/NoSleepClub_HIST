@@ -17,7 +17,7 @@ try {
     frames.push(...samples.map(item => ({ ...item.feature, label: clip.label, background: clip.background, footageId: clip.footageId } as CatalogFrame)));
   }
   const model = trainFewShot(frames, clips.map(clip => clip.footageId)); classifierSchema.parse(model);
-  const ownSavedFramesRecognized = frames.filter(frame => !frame.background && rankFewShot(frame.embedding, model).fast).length;
+  const ownSavedFramesRetrievable = frames.filter(frame => !frame.background && rankFewShot(frame.embedding, model).fast).length;
   let saved = false;
   if (process.argv.includes('--write')) {
     const latest = await db.collection('footages').find({ roomId, status: 'ready', kind: 'reference', frameCount: { $gt: 0 } }).project({ footageId: 1 }).toArray();
@@ -26,6 +26,6 @@ try {
     if (!result.matchedCount) throw new Error('Dataset changed while training');
     saved = true;
   }
-  console.log(JSON.stringify({ saved, classes: model.classes.length, storedFrames: frames.length, ownSavedFramesRecognized, note: 'Self-match regression only, not an accuracy estimate on new camera frames' }));
+  console.log(JSON.stringify({ saved, classes: model.classes.length, storedFrames: frames.length, ownSavedFramesRetrievable, note: 'Retrieval self-match only; geometric verification and new camera accuracy are not measured here' }));
 } catch (error) { console.error(error instanceof Error ? error.message.replace(/mongodb[^\s]*/g, '[redacted]') : 'Training failed'); process.exitCode = 1; }
 finally { await client.close(); }

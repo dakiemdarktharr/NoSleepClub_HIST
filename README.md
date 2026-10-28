@@ -2,7 +2,7 @@
 
 Web test trên điện thoại: **Dev quay footage và đặt tên khu vực → chia sẻ QR của phòng → User dùng camera để nhận diện**. Khi không đủ bằng chứng, User hiển thị `...`.
 
-**[Mở bản test HTTPS](https://nosleepclub-hist-connected.vercel.app/)** · [QR mở app](docs/qr-app.png) · [Audit bản 5 giây](docs/audit-five-second.md)
+**[Mở bản test HTTPS](https://nosleepclub-hist-connected.vercel.app/)** · [QR mở app](docs/qr-app.png) · [Audit giao diện & bản đồ](docs/audit-indochine-maps.md)
 
 ![QR mở app trên điện thoại](docs/qr-app.png)
 
@@ -15,11 +15,11 @@ Hai vai trò là **chế độ test**, không phải tài khoản đăng nhập 
 3. Bấm **Quay mẫu 5 giây**. Giữ camera tương đối ổn định ở một khu vực; video tự dừng. Đặt tên rồi bấm **Lưu & huấn luyện**. Các frame được xử lý sau khi dừng, không phụ thuộc tốc độ inference trong lúc quay.
 4. Đợi báo bộ mẫu đã học và sẵn sàng. Một video đủ để tạo mẫu đầu tiên cho một khu vực; không bắt buộc nhiều video. Có thể bổ sung **cảnh khác** để hỗ trợ từ chối.
 5. Mở **QR của phòng**, quét bằng điện thoại khác và chọn **User**. Các thiết bị phải dùng đúng QR phòng để có cùng bộ mẫu.
-6. Ở User, bật camera. Khớp mạnh trả tên từ frame đầu; bằng chứng vừa phải cần thêm một frame. **Cập nhật mẫu** để lấy footage mới. Model của phòng được lưu trên MongoDB và cache trên thiết bị, không train lại khi chỉ chuyển User.
+6. Ở User, bật camera. Khớp mạnh trả tên từ frame đầu; bằng chứng vừa phải cần thêm một frame. **Thư viện → Cập nhật bộ mẫu** để lấy footage mới. Model của phòng được lưu trên MongoDB và cache trên thiết bị, không train lại khi chỉ chuyển User.
 
-Footage đã lưu trước cập nhật vẫn dùng được. Dev có nút **Huấn luyện từ footage đã lưu**. Lần đầu trên thiết bị mới cần tải / khởi tạo backbone; thời gian này khác với thời gian nhận diện khi model đã sẵn sàng.
+Footage đã lưu trước cập nhật vẫn dùng được. Dev có **Thư viện → Huấn luyện & kiểm thử → Huấn luyện lại**. Lần đầu trên thiết bị mới cần tải / khởi tạo backbone; thời gian này khác với thời gian nhận diện khi model đã sẵn sàng.
 
-QR ở trang chủ chỉ mở app. QR sau khi tạo phòng mở cùng bộ dữ liệu và mang quyền đọc dữ liệu phòng đó. Chỉ chia sẻ QR phòng cho người được xem footage. Không đăng QR phòng vào repo public.
+QR trong tài liệu này chỉ mở app. Màn đầu trong web chỉ có hai nút User / Dev; QR và thư viện mở từ menu sau khi chọn vai trò. QR sau khi tạo phòng mở cùng bộ dữ liệu và mang quyền đọc dữ liệu phòng đó. Chỉ chia sẻ QR phòng cho người được xem footage. Không đăng QR phòng vào repo public.
 
 Nếu trình duyệt trong app nhắn tin chặn camera, mở link bằng Safari/Chrome. Camera web cần HTTPS hoặc localhost. Tắt camera khi rời tab; nếu đang quay, app dừng và vẫn yêu cầu đặt tên trước khi lưu.
 
@@ -28,13 +28,26 @@ Nếu trình duyệt trong app nhắn tin chặn camera, mở link bằng Safari
 - DINOv2 Small q8 trích 384 đặc trưng toàn ảnh trong Web Worker. Model và revision được khóa; không dùng LLM để đoán tên.
 - Lọc ảnh bằng độ sáng, độ nét Laplacian và số chi tiết ORB. Đây là bộ lọc chất lượng thực dụng, không thể phát hiện hoàn hảo mọi kiểu motion blur.
 - Giữ các frame rõ trong 5 giây, rồi chọn tối đa 8 frame trải đều thời gian để trích đặc trưng. Không loại sạch video đứng yên vì ảnh gần trùng. Video gốc vẫn được lưu đầy đủ sau khi người Dev đặt tên.
-- Fit bộ phân loại few-shot với các prototype theo nhãn và các ảnh hỗ trợ. Đây là học bộ phân loại nhẹ trên đặc trưng DINOv2 có sẵn, không fine-tune toàn bộ backbone. Artifact `fewshot-dinov2-v2` được lưu trên MongoDB; phía User ưu tiên tải artifact gọn và cache IndexedDB.
-- Dùng khớp tốt nhất phù hợp với góc nhìn hiện tại; không lấy trung bình bắt buộc với góc khác không chồng lấn. Khớp rất mạnh và cách biệt nhãn đối thủ trả tên ngay; mức yếu hơn cần ORB + RANSAC với một frame hỗ trợ rõ. Không bắt buộc hai ảnh hỗ trợ cùng khớp.
+- Fit bộ phân loại few-shot với các prototype theo nhãn và các ảnh hỗ trợ. Đây là học bộ phân loại nhẹ trên đặc trưng DINOv2 có sẵn, không fine-tune toàn bộ backbone. Artifact `fewshot-dinov2-v3` được lưu trên MongoDB; phía User ưu tiên tải artifact gọn và cache IndexedDB.
+- Dùng khớp tốt nhất phù hợp với góc nhìn hiện tại; không lấy trung bình bắt buộc với góc khác không chồng lấn. Mọi tên trả về đều phải có ORB + RANSAC xác minh với ít nhất một frame hỗ trợ rõ, kể cả khi điểm DINOv2 rất cao. So với tối đa ba khu vực cạnh tranh; mẫu âm và các khu vực quá giống nhau được từ chối. Không bắt buộc hai ảnh hỗ trợ cùng khớp.
 - Bằng chứng hình học mạnh cũng trả tên ngay; mức vừa phải cần hai lượt cùng tên. Frame không rõ làm kết quả về `...`; kết quả cũ hết hạn sau 2,5 giây khi chưa có xác nhận mới.
 - Điểm cosine và số inlier là chỉ số đối chiếu, **không phải xác suất nhận diện đúng**. Ngưỡng ban đầu chưa được hiệu chỉnh bằng căn phòng thật của người dùng.
 - Footage chọn **Kiểm thử riêng** bị loại khỏi tập tham chiếu. Chạy kiểm thử trong Dev để đo đúng / nhầm / chưa chắc và cảnh lạ bị nhận nhầm trên bộ này.
 
 Đây là nhận diện **khung cảnh camera đang thấy**, không đo vị trí người cầm máy, tọa độ, hướng nhìn của mắt hoặc bản đồ 3D. Hai góc gần giống, thay đồ đạc, thiếu sáng và ít texture có thể gây từ chối hoặc nhầm. Không có cam kết đúng 100%; ưu tiên từ chối khi bằng chứng yếu.
+
+## Giao diện & bản đồ
+
+Giấy ngà, xanh mực và đỏ sơn son; Phudu / Be Vietnam Pro có dấu tiếng Việt, tự phục vụ font từ app. Đồ họa vector gốc tham khảo hoa văn người dùng cung cấp. Không đưa ảnh tham khảo hay footage riêng vào Git. Camera chiếm phần lớn màn hình; thư viện, QR và kiểm thử được thu vào một drawer. Hover/press dùng Motion; typewriter, iris từ vị trí bấm và stagger wipe là triển khai gốc lấy cảm hứng từ các ví dụ được yêu cầu. Có hỗ trợ reduced motion và bàn phím.
+
+Ở **User → Bản đồ**, nhập điểm đi và nơi đến, nhấn kính lúp rồi chọn đúng địa điểm. Có thể nhập `vĩ độ,kinh độ`, đổi chiều, hoặc chủ động cấp quyền lấy vị trí. Không gắn nhãn nhận diện căn phòng với GPS.
+
+- **Đi bộ / xe máy:** Valhalla thực hiện tìm đường trên mạng OpenStreetMap, profile `pedestrian` / `motor_scooter`, bật `shortest`; profile xe máy còn tắt hierarchy pruning trong giới hạn của engine. Đây là tối ưu quãng đường theo đồ thị được cung cấp, không phải cam kết ngắn nhất trên mọi đường thực tế. Không dùng profile ô tô thay xe máy. Đường vẽ và hướng dẫn tiếng Việt lấy từ kết quả thật.
+- **Bus / Metro:** Dijkstra chạy trong Web Worker trên đồ thị có hướng theo thứ tự trạm của EBMS TP.HCM. Chi phí kết hợp quãng đường, đi bộ và phạt lên tuyến; tối đa ba lượt lên xe/tàu (hai lần chuyển). Có số xe, chiều tuyến, trạm lên, trạm xuống, và đường đi bộ khi chuyển. Đoạn đi bộ được xác minh lại bằng routing đường bộ; không nối thẳng qua sông để giả làm lối đi.
+- Snapshot có 334 chiều bus và hai chiều Metro 1. Dữ liệu nguồn có thể sai hoặc chậm cập nhật: ví dụ ga Văn Thánh đang bị API gắn “Chưa khai thác”, nên app thận trọng không đề xuất lên/xuống ở ga này, không suy diễn rằng ga thực tế đóng cửa. Ngày snapshot hiển thị trong kết quả. Không có dữ liệu giờ chờ, giờ khởi hành, chuyến cuối hoặc vận hành tức thời.
+- Tìm địa điểm dùng Photon / OpenStreetMap; nền bản đồ HOT do OSM France phục vụ, có attribution. API server có cache 24 giờ và lease chung MongoDB để giới hạn upstream tối đa khoảng một request/giây. Dịch vụ cộng đồng chỉ dùng cho bản thử nghiệm công khai, miễn phí, lưu lượng nhỏ này.
+
+Chạy `node scripts/fetch-transit.mjs` để làm mới snapshot. Script cache tối đa 24 giờ, có thể tiếp tục sau gián đoạn, và không tự chạy khi build/deploy. Snapshot là dữ liệu công khai từ nguồn có attribution; video và dữ liệu phòng riêng được tách hoàn toàn.
 
 ## Kiến trúc
 
@@ -47,14 +60,14 @@ flowchart LR
   D --> E[Vercel API: validate + capability keys]
   E --> F[MongoDB: video, features, classifier đã học]
   F --> G[User tải classifier, cache trên thiết bị]
-  G --> H[Worker: prototype match, geometry khi cần]
+  G --> H[Worker: prototype match, geometry bắt buộc]
   I[User camera] --> H
   H --> J[Tên khu vực hoặc ...]
 ```
 
 Video được chia thành phần 256 KiB để không đẩy cả file qua giới hạn payload của Vercel Functions. Phân trang frame; chỉ footage tải đầy đủ mới được làm tham chiếu. Mất mạng khi lưu giữ video trong phiên để thử lại hoặc tải xuống; footage dở được dọn khi có thể và có thể xóa trong Dev.
 
-MongoDB chứa `workspaces`, `footages`, `frames`, `chunks`, `limits`, `quota`. Video chunks dùng BSON Binary; không đưa footage vào GitHub. Vercel chỉ giữ secret `MONGODB_URI` ở phía server. Khóa đọc/ghi được lưu dạng hash trên database; khóa ghi không có trong QR. User camera không được gửi lên server.
+MongoDB chứa `workspaces`, `footages`, `frames`, `chunks`, `limits`, `quota`, `maps_cache`. Video chunks dùng BSON Binary; không đưa footage vào GitHub. Vercel chỉ giữ secret `MONGODB_URI` ở phía server. Khóa đọc/ghi được lưu dạng hash trên database; khóa ghi không có trong QR. User camera không được gửi lên server.
 
 Giới hạn bản test: 24 MiB/video, 80 frame/footage, 12 footage/phòng, hạn mức lưu dự trữ 96 MiB/phòng và 360 MiB toàn app; hạn chế tạo phòng theo IP và tổng số phòng. Dữ liệu giữ tới khi Dev xóa. Chưa có đăng nhập người dùng, khôi phục khóa Dev, quản trị vận hành hoặc phân quyền sản xuất. Mất bộ nhớ trình duyệt có thể mất quyền ghi; hãy giữ video gốc cần thiết.
 

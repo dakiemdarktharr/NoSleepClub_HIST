@@ -1,5 +1,7 @@
 # Các hệ thống đã khảo sát và quyết định cho POC
 
+> Cập nhật: hành vi hiện tại là classifier v3 và giao diện/bản đồ mới; xem [audit-indochine-maps.md](audit-indochine-maps.md). Các mô tả v1/v2 dưới đây được giữ làm hồ sơ khảo sát.
+
 Khảo sát ngày 28/10/2026. Đây là các hệ thống / công trình đại diện cho các thành phần được yêu cầu; không khẳng định bao phủ mọi sản phẩm đã tồn tại. Những kết quả benchmark của tác giả không phải kết quả của app này.
 
 | Hệ thống / nguồn chính | Workflow và kiến trúc liên quan | Áp dụng vào HIST |

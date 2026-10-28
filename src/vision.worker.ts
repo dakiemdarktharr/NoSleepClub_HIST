@@ -2,6 +2,7 @@ import cvModule from '@techstark/opencv-js';
 import { env, pipeline, RawImage, type ImageFeatureExtractionPipeline } from '@huggingface/transformers';
 import { normalize, quality } from './recognition';
 import { rankFewShot, trainFewShot } from './fewshot';
+import { decideEvidence } from './evidence';
 import type { CatalogFrame, Feature, Prediction, TrainedClassifier } from './shared';
 
 const cv = cvModule;
@@ -34,8 +35,13 @@ async function extract(image: ImageData, t: number) {
   try {
     cv.cvtColor(source, gray, cv.COLOR_RGBA2GRAY);
     detector.detectAndCompute(gray, mask, keypoints, descriptors);
-    const n = Math.min(250, keypoints.size());
-    const points: [number, number][] = Array.from({ length: n }, (_, index) => {
+    // Spread features across the visible scene instead of spending the entire budget on one poster/text block.
+    const cells = Array.from({ length: 16 }, () => [] as { index: number; response: number }[]);
+    for (let index = 0; index < keypoints.size(); index++) { const keypoint = keypoints.get(index); const cell = Math.min(3, Math.floor(keypoint.pt.y / image.height * 4)) * 4 + Math.min(3, Math.floor(keypoint.pt.x / image.width * 4)); cells[cell].push({ index, response: keypoint.response }); }
+    cells.forEach(cell => cell.sort((a, b) => b.response - a.response));
+    const selected: number[] = [];
+    for (let rank = 0; selected.length < Math.min(250, keypoints.size()); rank++) for (const cell of cells) { if (cell[rank] && selected.length < 250) selected.push(cell[rank].index); }
+    const points: [number, number][] = selected.map(index => {
       const p = keypoints.get(index).pt; return [Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100];
     });
     // This ONNX export provides last_hidden_state, not pooler_output.
@@ -44,7 +50,8 @@ async function extract(image: ImageData, t: number) {
     if (output.dims.at(-1) !== 384) { output.dispose(); throw new Error('Model trả đặc trưng không đúng phiên bản.'); }
     const embedding = normalize((output.data as Float32Array).slice(0, 384));
     output.dispose();
-    const feature: Feature = { t, embedding, points, descriptors: bytes64(descriptors.data.slice(0, n * 32)), width: image.width, height: image.height, sharpness: check.sharpness, brightness: check.brightness };
+    const selectedBytes = new Uint8Array(selected.length * 32); selected.forEach((index, row) => selectedBytes.set(descriptors.data.subarray(index * 32, (index + 1) * 32), row * 32));
+    const feature: Feature = { t, embedding, points, descriptors: bytes64(selectedBytes), width: image.width, height: image.height, sharpness: check.sharpness, brightness: check.brightness };
     return { feature, check };
   } finally { source.delete(); gray.delete(); descriptors.delete(); mask.delete(); keypoints.delete(); detector.delete(); }
 }
@@ -83,17 +90,14 @@ function predict(feature: Feature): Prediction {
   const ranked = rankFewShot(feature.embedding, classifier);
   const unknown = { label: null, similarity: ranked.first?.score || 0, inliers: 0 };
   if (!ranked.first) return { ...unknown, reason: 'Phòng chưa có mẫu đã học' };
-  // A strong learned match can be returned on the first frame, including one-shot classes.
-  if (ranked.fast) return { label: ranked.first.learned.label, similarity: ranked.first.score, inliers: 0, immediate: true, reason: 'Khớp mạnh với khu vực đã học' };
   if (ranked.first.learned.background && ranked.gap >= .025) return { ...unknown, reason: 'Đây là khung cảnh khác' };
   // Geometry corroborates a moderate match; a second overlapping reference is NOT required.
-  const verified = ranked.ranked.slice(0, 2).filter(candidate => candidate.score >= .60).map(candidate => ({ candidate,
-    inliers: Math.max(0, ...candidate.supports.slice(0, 3).map(item => geometry(feature, item.frame))) })).sort((a, b) => b.inliers - a.inliers);
-  const best = verified[0], second = verified[1]?.inliers || 0;
-  if (!best || best.inliers < 10 || best.candidate.learned.background || (second > 0 && best.inliers < second * 1.35 + 3)) {
-    return { ...unknown, reason: 'Chưa khớp đủ rõ với khu vực đã học' };
-  }
-  return { label: best.candidate.learned.label, similarity: best.candidate.score, inliers: best.inliers, immediate: best.inliers >= 16, reason: 'Đã khớp với footage của khu vực' };
+  const verified = ranked.ranked.slice(0, 3).filter(candidate => candidate.score >= .60).map(candidate => ({
+    label: candidate.learned.label, background: candidate.learned.background, score: candidate.score,
+    fast: candidate === ranked.first && ranked.fast,
+    inliers: Math.max(0, ...candidate.supports.slice(0, 4).map(item => geometry(feature, item.frame))),
+  }));
+  return decideEvidence(verified);
 }
 self.onmessage = async (event: MessageEvent<{ id: number; action: string; image?: ImageData; feature?: Feature; t?: number; frames?: CatalogFrame[]; sourceIds?: string[]; model?: TrainedClassifier }>) => {
   const { id, action } = event.data;

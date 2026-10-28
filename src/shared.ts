@@ -1,6 +1,6 @@
 export const MODEL = 'dinov2-small-q8-orb-v1';
 export const MAX_FRAMES = 80;
-export const CLASSIFIER_VERSION = 'fewshot-dinov2-v2';
+export const CLASSIFIER_VERSION = 'fewshot-dinov2-v3';
 export const CAPTURE_SECONDS = 5;
 export const CHUNK_SIZE = 256 * 1024;
 export const MAX_VIDEO_BYTES = 24 * 1024 * 1024;

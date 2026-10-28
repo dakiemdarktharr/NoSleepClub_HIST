@@ -16,6 +16,8 @@ export function database() {
       db.collection('limits').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       db.collection('limits').createIndex({ bucket: 1 }, { unique: true }),
       db.collection('quota').createIndex({ key: 1 }, { unique: true }),
+      db.collection('maps_cache').createIndex({ key: 1 }, { unique: true }),
+      db.collection('maps_cache').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
     ]);
     return db;
   })().catch(error => { connection = undefined; throw error; });

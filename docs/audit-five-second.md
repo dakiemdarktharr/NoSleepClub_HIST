@@ -1,5 +1,7 @@
 # Sửa luồng quay 5 giây và học để dùng lại
 
+> Cập nhật: hành vi hiện tại là classifier v3 và giao diện/bản đồ mới; xem [audit-indochine-maps.md](audit-indochine-maps.md). Các mô tả v1/v2 dưới đây được giữ làm hồ sơ khảo sát.
+
 Ngày 28/10/2026. Thay thế các cổng nhận diện v1 trong audit cũ.
 
 ## Nguyên nhân được tái hiện

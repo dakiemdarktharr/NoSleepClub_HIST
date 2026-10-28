@@ -1,18 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { downloadFootage, loadCatalog, rememberRoom, restoreRoom, rpc, saveFootage, shareLink, Vision } from './client';
 import { quality, TemporalGate } from './recognition';
 import { currentModel, selectTrainingFrames, sourceIdsFor } from './fewshot';
 import { readModelCache, writeModelCache } from './model-cache';
 import { CAPTURE_SECONDS, MAX_VIDEO_BYTES, type CapturedFrame, type Feature, type Footage, type Mode, type Prediction, type Room, type TrainedClassifier } from './shared';
+import Icon from './ui/Icon';
+import Modal from './ui/Modal';
+import { CloudDragon, InkLandscape, Lantern } from './ui/Ornament';
+import { ChangingTitle, useButtonMotion, useCurtain } from './ui/Motion';
+const MapsPanel = lazy(() => import('./maps/MapsPanel'));
 
 type Draft = { blob: Blob; frames: Feature[]; captured: CapturedFrame[]; duration: number; cover: string; savedId?: string };
 const emptyPrediction: Prediction = { label: null, reason: 'Chờ camera và mẫu tham chiếu', similarity: 0, inliers: 0 };
 const seconds = (value: number) => `${Math.floor(value / 60).toString().padStart(2, '0')}:${Math.floor(value % 60).toString().padStart(2, '0')}`;
 const sizeText = (value: number) => `${(value / 1024 / 1024).toFixed(1)} MB`;
-function Icon({ name }: { name: 'camera' | 'record' | 'qr' | 'back' }) {
-  return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">{name === 'camera' ? <><path d="M3 7h4l2-3h6l2 3h4v13H3z" /><circle cx="12" cy="13" r="4" /></> : name === 'record' ? <><rect x="3" y="5" width="18" height="14" rx="4" /><circle cx="12" cy="12" r="4" /></> : name === 'qr' ? <><path d="M3 3h6v6H3zm12 0h6v6h-6zM3 15h6v6H3zm12 0h3v3h3v3h-6zM12 3v9H3m9 9v-6h9M18 12h3" /></> : <path d="m14 5-7 7 7 7" />}</svg>;
-}
 function saveBlob(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob), link = document.createElement('a');
   link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
@@ -41,7 +43,12 @@ export default function App() {
   const [joinLink, setJoinLink] = useState('');
   const [report, setReport] = useState('');
   const [learnedCount, setLearnedCount] = useState(0);
+  const [tab, setTab] = useState<'camera' | 'maps'>('camera');
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const { transition, transitioning, curtains } = useCurtain();
+  useButtonMotion(`${mode}:${tab}:${libraryOpen}:${!!draft}:${showQR}:${camera}:${busy}`);
   const video = useRef<HTMLVideoElement>(null);
+  const viewfinder = useRef<HTMLDivElement>(null);
   const canvas = useRef(document.createElement('canvas'));
   const stream = useRef<MediaStream | null>(null);
   const facing = useRef<'environment' | 'user'>('environment');
@@ -111,10 +118,15 @@ export default function App() {
   function snapshot() {
     const element = video.current;
     if (!element?.videoWidth) throw new Error('Chờ camera hiện hình rồi thử lại.');
-    const scale = Math.min(1, 512 / Math.max(element.videoWidth, element.videoHeight));
-    canvas.current.width = Math.round(element.videoWidth * scale); canvas.current.height = Math.round(element.videoHeight * scale);
+    // Match object-fit: cover exactly: the classifier must see the scene visible to the user.
+    const bounds = viewfinder.current?.getBoundingClientRect();
+    const targetAspect = bounds?.height ? bounds.width / bounds.height : element.videoWidth / element.videoHeight;
+    const cropWidth = Math.min(element.videoWidth, element.videoHeight * targetAspect);
+    const cropHeight = Math.min(element.videoHeight, element.videoWidth / targetAspect);
+    const scale = Math.min(1, 512 / Math.max(cropWidth, cropHeight));
+    canvas.current.width = Math.round(cropWidth * scale); canvas.current.height = Math.round(cropHeight * scale);
     const context = canvas.current.getContext('2d', { willReadFrequently: true })!;
-    context.drawImage(element, 0, 0, canvas.current.width, canvas.current.height);
+    context.drawImage(element, (element.videoWidth - cropWidth) / 2, (element.videoHeight - cropHeight) / 2, cropWidth, cropHeight, 0, 0, canvas.current.width, canvas.current.height);
     return context.getImageData(0, 0, canvas.current.width, canvas.current.height);
   }
   function coverImage() {
@@ -154,24 +166,6 @@ export default function App() {
     if (!showQR) return;
     QRCode.toDataURL(link, { width: 640, margin: 3, errorCorrectionLevel: 'M', color: { dark: '#172c42', light: '#ffffff' } }).then(setQrImage).catch(fail);
   }, [showQR, link]);
-  useEffect(() => {
-    if (!draft && !showQR) return;
-    const previous = document.activeElement as HTMLElement | null;
-    const regions = [...document.querySelectorAll<HTMLElement>('main, .header, .footer')];
-    regions.forEach(element => { element.inert = true; });
-    const modal = document.querySelector<HTMLElement>('.modal');
-    modal?.querySelector<HTMLElement>('input:not(:disabled), button:not(:disabled)')?.focus();
-    const keyboard = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && showQR) { setShowQR(false); return; }
-      if (event.key !== 'Tab') return;
-      const elements = [...(modal?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href]') || [])].filter(element => element.offsetParent !== null);
-      const first = elements[0], last = elements.at(-1);
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    };
-    document.addEventListener('keydown', keyboard);
-    return () => { regions.forEach(element => { element.inert = false; }); document.removeEventListener('keydown', keyboard); previous?.focus(); };
-  }, [!!draft, showQR]);
 
   async function enter(next: Mode) {
     setBusy(true); setError('');
@@ -183,7 +177,7 @@ export default function App() {
         rememberRoom(target); setRoom(target); history.replaceState(null, '', '?room=' + target.id);
         setFootages([]); setStatus('Phòng test mới đã sẵn sàng. Quay từng khu vực rồi đặt tên.');
       } else if (room) { clips = await refresh(room); setStatus(next === 'dev' ? 'Quay một video 5 giây để dạy khu vực.' : 'Đang chuẩn bị bộ mẫu đã học…'); }
-      setMode(next);
+      setTab('camera'); setMode(next);
       if (target) void prewarm(target, clips).catch(fail);
     } catch (error) { fail(error); } finally { setBusy(false); }
   }
@@ -195,7 +189,7 @@ export default function App() {
       if (current !== cameraGeneration.current) { next.getTracks().forEach(track => track.stop()); return; }
       stream.current = next; video.current!.srcObject = next; await video.current!.play();
       setCamera(true); setQualityLabel('Camera trực tiếp');
-      setStatus('Camera đã bật. Có thể quay mẫu 5 giây. Lần đầu model cần tải qua mạng.');
+      setStatus(mode === 'dev' ? 'Quay 5 giây, rồi đặt tên khu vực.' : 'Đang chuẩn bị nhận diện…');
       if (mode === 'dev') { void ensureVision().catch(fail); return; }
       await ensureVision();
       if (mode === 'user' && room && current === cameraGeneration.current) await startRecognition();
@@ -352,45 +346,69 @@ export default function App() {
     catch (error) { fail(error); }
   }
 
+  async function leave() {
+    stopCamera(); setLibraryOpen(false); setError('');
+    await transition('wipe', () => { setMode(null); setTab('camera'); });
+    document.querySelector<HTMLButtonElement>('.role-button')?.focus();
+  }
+  const visibleStatus = busy || !modelReady ? status : mode === 'dev' ? status : '';
   return <>
-    <header className="header"><a className="brand" href="/" onClick={event => { event.preventDefault(); if (!recording && !busy && !draft) { stopCamera(); setMode(null); setError(''); } }}><img src="/icon.svg" alt="" /> <span>NoSleepClub <b>HIST</b></span></a><div className="header-actions"><span className="test-badge">Test</span><button className="icon-button" onClick={() => setShowQR(true)} aria-label="Mở mã QR"><Icon name="qr" /><span>Mã QR</span></button></div></header>
-    <main>
-      {!mode ? <section className="landing">
-        <div className="landing-copy"><p className="project-note">Nhận diện nơi chốn qua camera</p><h1>Một nơi đã quay.<br />Một nơi được nhận ra.</h1><p>Dev ghi lại khung cảnh và đặt tên. User hướng camera vào đó để thử nhận diện.</p><p className="test-note">Hai vai trò đang ở chế độ test, chưa dùng tài khoản đăng nhập.</p></div>
-        <div className="role-options">
-          <button className="role-option user-option" onClick={() => void enter('user')} disabled={busy}><span className="role-symbol"><Icon name="camera" /></span><span className="role-title">User <small>Test</small></span><span>Hướng camera vào một nơi.<br />Xem app có nhận ra không.</span><strong>Vào User <span aria-hidden="true">↗</span></strong></button>
-          <button className="role-option dev-option" onClick={() => void enter('dev')} disabled={busy}><span className="role-symbol"><Icon name="record" /></span><span className="role-title">Dev <small>Test</small></span><span>Quay footage, đặt tên khu vực.<br />Tạo bộ mẫu để thử.</span><strong>Vào Dev <span aria-hidden="true">↗</span></strong></button>
+    <div className={`app-shell ${mode ? 'in-workspace' : 'at-title'}`}>
+      {!mode ? <main className="title-screen">
+        <div className="tile-border" aria-hidden="true"/>
+        <div className="title-masthead"><span>NoSleepClub</span><span>HIST</span><span>Sài Gòn</span></div>
+        <Lantern/>
+        <div className="title-center"><CloudDragon className="title-ornament"/><h1><ChangingTitle/></h1>
+          <div className="role-choices" aria-label="Chọn vai trò">
+            <button className="role-button user-role" disabled={busy || transitioning} onClick={event => void transition('iris', () => enter('user'), event)}><span>User</span><Icon name="chevron"/></button>
+            <button className="role-button dev-role" disabled={busy || transitioning} onClick={event => void transition('iris', () => enter('dev'), event)}><span>Dev</span><Icon name="chevron"/></button>
+          </div>
+          {busy && <p className="title-feedback" role="status">Đang mở phiên…</p>}
+          {error && <p className="title-feedback error-text" role="alert">{error}</p>}
         </div>
-        <div className="landing-bottom"><span><i /> Khi chưa nhận ra, app trả <b>...</b></span><button className="text-button" onClick={() => setShowQR(true)}>Mở app trên điện thoại <Icon name="qr" /></button></div>
-      </section> : <>
-        <div className="workspace-heading"><div><button className="text-button back" disabled={busy || recording || !!draft} onClick={() => { stopCamera(); setMode(null); }}><Icon name="back" /> Đổi vai trò</button><h1>{mode === 'dev' ? 'Ghi lại một nơi.' : 'Bạn đang nhìn nơi nào?'}</h1><p>{mode === 'dev' ? 'Một khu vực, một video 5 giây. Giữ máy tương đối ổn định; đặt tên rồi huấn luyện.' : 'Bộ mẫu đã học được nạp sẵn. Khớp mạnh thì hiện tên ngay; không khớp sẽ là ...'}</p></div><span className="mode-badge">{mode === 'dev' ? 'Dev' : 'User'} / Test</span></div>
-        {mode === 'user' && !room ? <section className="join-panel"><Icon name="qr" /><h2>Mở một phòng test</h2><p>Ở Dev, quay và lưu footage rồi mở QR của phòng. Dùng điện thoại quét QR đó để vào User với cùng bộ mẫu.</p><form onSubmit={join}><label htmlFor="join-link">Hoặc dán link phòng</label><input id="join-link" type="url" value={joinLink} onChange={event => setJoinLink(event.target.value)} placeholder="https://…/?room=…#view=…" required /><button className="primary">Mở phòng</button></form><button className="text-button" disabled={busy} onClick={() => void enter('dev')}>Vào Dev để tạo phòng</button></section> : <div className="workspace">
-          <section className="camera-panel" aria-label="Camera trực tiếp">
-            <div className={`viewfinder ${recording ? 'recording' : ''}`}>
-              <video ref={video} autoPlay muted playsInline hidden={!camera} />
-              {!camera && <div className="camera-placeholder"><span className="frame-mark"><Icon name="camera" /></span><h2>Đưa khung cảnh vào camera</h2><p>Camera sau được ưu tiên trên điện thoại.</p><button className="light-button" disabled={busy} onClick={() => void openCamera()}>Bật camera</button></div>}
-              {camera && <span className="camera-tag"><i /> {recording ? `Đang quay ${seconds(elapsed)}` : 'Live camera'}</span>}
-              {camera && <button className="switch-camera" aria-label="Đổi camera trước hoặc sau" disabled={recording || busy || !!draft} onClick={() => { facing.current = facing.current === 'environment' ? 'user' : 'environment'; void openCamera(); }}>↻</button>}
-              {mode === 'user' && <div className={`recognition-result ${prediction.label ? 'matched' : ''}`} role="status" aria-live="polite" aria-atomic="true"><span>{prediction.label ? 'Khu vực nhận diện' : 'Chưa xác nhận được khu vực'}</span><strong>{prediction.label || '...'}</strong><p>{prediction.reason}</p></div>}
+        <InkLandscape/><div className="title-bottom-rule" aria-hidden="true"/>
+      </main> : <>
+        <header className="app-header"><div className="header-start"><button className="icon-button" aria-label="Về màn chọn vai trò" disabled={busy || recording || !!draft || transitioning} onClick={() => void leave()}><Icon name="back"/></button><span className="wordmark">HIST</span><span className="role-indicator">{mode === 'dev' ? 'Dev' : 'User'} <small>Test</small></span></div>
+          {mode === 'user' && <nav className="view-tabs" aria-label="Chức năng"><button aria-pressed={tab === 'camera'} onClick={() => setTab('camera')}><Icon name="camera"/><span>Camera</span></button><button aria-pressed={tab === 'maps'} onClick={() => { stopCamera(); setTab('maps'); }}><Icon name="map"/><span>Bản đồ</span></button></nav>}
+          <button className="icon-button library-toggle" aria-label="Mở thư viện và công cụ" disabled={recording || busy || !!draft} onClick={() => setLibraryOpen(true)}><Icon name="menu"/></button>
+        </header>
+        <main className="workspace-main">
+          <section className="camera-panel" hidden={tab !== 'camera'} aria-label="Camera trực tiếp">
+            <div ref={viewfinder} className={`viewfinder ${recording ? 'recording' : ''}`}>
+              <video ref={video} autoPlay muted playsInline hidden={!camera}/>
+              {!camera && <div className="camera-placeholder"><CloudDragon className="placeholder-ornament"/><h1>{mode === 'dev' ? 'Ghi lại một nơi.' : 'Nhìn lại một nơi.'}</h1><p>{mode === 'dev' ? 'Một khu vực. Năm giây.' : room ? `${learnedCount || labels.size} khu vực đã học` : 'Nhập link hoặc quét QR phòng để dùng bộ mẫu.'}</p><button className="primary camera-start" disabled={busy} onClick={() => void openCamera()}><Icon name="camera"/>Bật camera</button></div>}
+              {camera && <div className="camera-topline"><span className={`live-label ${recording ? 'is-recording' : ''}`}><i/>{recording ? `${seconds(elapsed)} / 00:05` : 'Trực tiếp'}</span><div className="camera-actions"><button className="glass-button" aria-label="Đổi camera trước hoặc sau" disabled={recording || busy || !!draft} onClick={() => { facing.current = facing.current === 'environment' ? 'user' : 'environment'; void openCamera(); }}>↻</button><button className="glass-button" aria-label="Tắt camera" disabled={recording || busy} onClick={stopCamera}><Icon name="close"/></button></div></div>}
+              {mode === 'user' && camera && <div className={`recognition-result ${prediction.label ? 'matched' : ''}`} role="status" aria-live="polite" aria-atomic="true"><span>{prediction.label ? 'Đang ở' : 'Chưa xác nhận'}</span><strong>{prediction.label || '...'}</strong>{!prediction.label && <p>{prediction.reason}</p>}</div>}
+              {mode === 'dev' && camera && <div className="capture-controls"><div className="capture-side">{recording ? <><strong>{sampleCount}</strong><span>frame rõ</span></> : <span>5 giây</span>}</div><button className={`capture-button ${recording ? 'is-recording' : ''}`} aria-label={recording ? 'Dừng quay' : 'Quay mẫu 5 giây'} disabled={busy || !!draft} onClick={recording ? stopRecording : startRecording}><span/></button><div className="capture-side"><span>{recording ? 'Dừng' : 'Quay mẫu'}</span></div></div>}
             </div>
-            <div className="camera-footer"><span className="quality-label"><i className={modelReady ? 'ready' : ''} />{qualityLabel}</span>{camera && <button className="text-button" disabled={recording || busy} onClick={stopCamera}>Tắt camera</button>}</div>
-            {mode === 'dev' ? <div className="record-toolbar"><div><strong>{seconds(elapsed)} / 00:05</strong><span>{sampleCount} frame rõ · {skipped} frame bỏ qua</span></div><button className={`record-button ${recording ? 'is-recording' : ''}`} disabled={!camera || busy || !!draft} onClick={recording ? stopRecording : startRecording}><span />{recording ? 'Dừng quay' : 'Quay mẫu 5 giây'}</button></div> : <div className="user-tools"><span>{learnedCount || labels.size} khu vực đã học · {referenceClips.length} footage</span><button disabled={!camera || busy || !modelReady} onClick={() => { setBusy(true); startRecognition(true).catch(fail).finally(() => setBusy(false)); }}>Cập nhật mẫu</button></div>}
-            <p className="camera-note">{mode === 'dev' ? 'Video tự dừng sau 5 giây. Các frame rõ được xử lý đầy đủ sau khi dừng, rồi lưu bộ phân loại để User dùng lại. Không cần quay dài hoặc quay nhiều lần.' : 'Khớp mạnh được nhận từ frame đầu; trường hợp yếu cần thêm một frame. Lần đầu trên thiết bị mới vẫn cần tải model. Camera User không tải ảnh lên server.'}</p>
+            <div className="camera-status"><span className="quality-label"><i className={modelReady ? 'ready' : ''}/>{camera ? qualityLabel : modelReady ? 'Bộ nhận diện sẵn sàng' : 'Đang tải bộ nhận diện…'}</span>{visibleStatus && <span className="process-status" role="status">{busy && <i className="spinner"/>}{visibleStatus}</span>}</div>
           </section>
-          <aside className="library"><div className="library-heading"><h2>{mode === 'dev' ? 'Footage của phòng' : 'Những nơi đã lưu'}</h2><span>{readyClips.length}</span></div><p>{mode === 'dev' ? 'Tên footage là nhãn của khu vực. Nhiều footage cùng tên bổ sung thêm góc nhìn.' : 'App chỉ có thể trả về các tên từ footage tham chiếu này.'}</p>
-            {!footages.length && <div className="empty-library"><Icon name="record" /><strong>Chưa có footage</strong><p>{mode === 'dev' ? 'Bật camera, quay 5 giây rồi đặt tên và huấn luyện.' : 'Cần quay mẫu ở Dev trước khi nhận diện.'}</p></div>}
-            <div className="footage-list">{footages.map(item => <article className="footage" key={item.id}><img src={item.cover} alt={`Khung hình ${item.label}`} /><div><h3>{item.label}</h3><span>{seconds(item.duration)} · {item.frameCount} frame · {sizeText(item.size)}</span><small>{item.status === 'pending' ? 'Lưu chưa hoàn tất' : item.kind === 'validation' ? 'Kiểm thử riêng' : item.background ? 'Mẫu cảnh khác' : 'Mẫu tham chiếu'}</small>{mode === 'dev' && <div className="footage-actions">{item.status === 'ready' && <button disabled={busy || recording} onClick={() => void download(item)}>Tải video</button>}<button disabled={busy || recording} onClick={() => void removeFootage(item)}>Xóa</button></div>}</div></article>)}</div>
-            <div className="share-panel"><Icon name="qr" /><h3>Thử trên thiết bị khác</h3><p>QR của phòng mở cùng bộ mẫu, chỉ chia sẻ quyền xem và nhận diện.</p><button onClick={() => setShowQR(true)}>Mở QR của phòng</button></div>
-            {mode === 'dev' && <div className="test-tools"><h3>Bộ nhận diện đã học</h3><p>Footage cũ vẫn dùng được. Có thể huấn luyện lại mà không quay lại video.</p><button disabled={busy || recording || !!draft || !referenceClips.some(item => item.frameCount > 0)} onClick={() => void trainSaved()}>Huấn luyện từ footage đã lưu</button></div>}
-            {mode === 'dev' && <details className="test-tools"><summary>Kiểm thử độ tin cậy</summary><p>Quay footage mới, chọn “Kiểm thử riêng” khi lưu. Thử lại cùng tên khu vực và cả cảnh lạ; các footage này không làm mẫu tham chiếu.</p><button disabled={busy || recording || !readyClips.some(item => item.kind === 'validation')} onClick={() => void evaluate()}>Chạy kiểm thử riêng</button>{report && <p className="evaluation-report">{report}</p>}</details>}
-          </aside>
-        </div>}
+          {mode === 'user' && tab === 'maps' && <Suspense fallback={<div className="map-loading" role="status">Đang mở bản đồ…</div>}><MapsPanel/></Suspense>}
+          {error && <div className="error-toast" role="alert"><span>{error}</span><button className="icon-button" aria-label="Đóng thông báo lỗi" onClick={() => setError('')}><Icon name="close"/></button></div>}
+        </main>
       </>}
-      <div className="status-bar" role="status">{busy && <span className="spinner" aria-hidden="true" />}{status}</div>
-      {error && <div className="error" role="alert">{error}<button aria-label="Đóng thông báo lỗi" onClick={() => setError('')}>×</button></div>}
-    </main>
-    <footer className="footer"><span>NoSleepClub / HIST</span><span>Bản thử nghiệm nhận diện nơi chốn</span><a href="https://github.com/dakiemdarktharr/NoSleepClub_HIST" target="_blank" rel="noreferrer">Mã nguồn & tài liệu</a></footer>
-    {draft && <div className="modal-backdrop"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="draft-title"><span className="test-badge">Video {CAPTURE_SECONDS} giây</span><h2 id="draft-title">Đặt tên rồi huấn luyện</h2><p>{seconds(draft.duration)} · {sizeText(draft.blob.size)} · {draft.captured.length} frame rõ đã giữ</p><form onSubmit={event => void submitFootage(event)}><label htmlFor="place-name">Tên khu vực</label><input autoFocus id="place-name" placeholder="Ví dụ: Bàn làm việc" maxLength={80} value={label} onChange={event => setLabel(event.target.value)} required disabled={busy || !!draft.savedId} /><label htmlFor="footage-kind">Dùng footage này để</label><select id="footage-kind" value={kind} onChange={event => setKind(event.target.value as typeof kind)} disabled={busy || !!draft.savedId}><option value="reference">Dạy model nhận diện khu vực này</option><option value="validation">Kiểm thử riêng, không làm mẫu</option></select><label className="checkbox-label"><input type="checkbox" checked={background} onChange={event => setBackground(event.target.checked)} disabled={busy || !!draft.savedId} /> Đây là cảnh khác, dùng để từ chối nhận diện</label>{!draft.captured.length && <p className="warning">Chưa có frame rõ. Tải video để giữ lại hoặc quay lại ở nơi đủ sáng, giữ máy ổn định.</p>}<button className="primary wide" disabled={busy || !label.trim() || !draft.captured.length || draft.blob.size > MAX_VIDEO_BYTES}>{draft.savedId ? 'Thử huấn luyện lại' : 'Lưu & huấn luyện'}</button></form><div className="modal-actions"><button disabled={busy} onClick={() => saveBlob(draft.blob, `footage.${draft.blob.type.includes('mp4') ? 'mp4' : 'webm'}`)}>Tải video gốc</button><button disabled={busy} onClick={() => { setDraft(null); setError(''); setStatus('Đã đóng footage.'); }}>Đóng</button></div>{busy && <p role="status">{status}</p>}{error && <p className="warning" role="alert">{error}</p>}</section></div>}
-    {showQR && <div className="modal-backdrop" onClick={() => setShowQR(false)}><section className="modal qr-modal" role="dialog" aria-modal="true" aria-labelledby="qr-title" onClick={event => event.stopPropagation()}><button className="modal-close" aria-label="Đóng mã QR" onClick={() => setShowQR(false)}>×</button><h2 id="qr-title">{room ? 'Mở phòng trên điện thoại' : 'Mở HIST trên điện thoại'}</h2><p>{room ? 'Dùng camera điện thoại quét mã. Link có quyền xem mẫu và nhận diện; không có quyền sửa footage.' : 'Quét mã để chọn User hoặc Dev. Sau khi lưu footage, dùng QR của phòng để chia sẻ cùng bộ mẫu.'}</p>{qrImage && <img className="qr-image" src={qrImage} alt="Mã QR mở app HIST" />}<div className="qr-actions"><button onClick={() => { navigator.clipboard?.writeText(link).then(() => setStatus('Đã sao chép link.')).catch(fail); }}>Sao chép link</button><button disabled={!qrImage} onClick={() => { const a = document.createElement('a'); a.href = qrImage; a.download = 'HIST-QR.png'; a.click(); }}>Tải QR</button></div><p className="test-note">Nếu app nhắn tin chặn camera, mở link bằng Safari hoặc Chrome.</p></section></div>}
+    </div>
+    {libraryOpen && <Modal title="Thư viện" drawer onClose={() => setLibraryOpen(false)} locked={busy}>
+      <div className="library-toolbar"><p>{referenceClips.length} footage tham chiếu</p><button onClick={() => { setLibraryOpen(false); setShowQR(true); }}><Icon name="qr"/>QR phòng</button></div>
+      {!room && <form className="join-form" onSubmit={join}><label htmlFor="join-link">Link phòng</label><div className="input-action"><input id="join-link" type="url" value={joinLink} onChange={event => setJoinLink(event.target.value)} placeholder="Dán link từ Dev" required/><button type="submit" aria-label="Mở phòng"><Icon name="chevron"/></button></div></form>}
+      {!footages.length && <div className="empty-library"><Icon name="record" size={32}/><h3>Chưa có khu vực nào</h3><p>{mode === 'dev' ? 'Bật camera, quay 5 giây rồi đặt tên.' : 'Mở QR phòng từ Dev để nạp bộ mẫu.'}</p></div>}
+      <div className="footage-list">{footages.map(item => <article className="footage" key={item.id}><img src={item.cover} alt={`Khung hình ${item.label}`}/><div className="footage-copy"><h3>{item.label}</h3><p>{seconds(item.duration)} / {item.frameCount} frame</p><small>{item.status === 'pending' ? 'Chưa lưu xong' : item.kind === 'validation' ? 'Kiểm thử riêng' : item.background ? 'Cảnh khác' : 'Tham chiếu'}</small>{mode === 'dev' && <div className="footage-actions">{item.status === 'ready' && <button disabled={busy} onClick={() => void download(item)}>Tải video</button>}<button disabled={busy} onClick={() => void removeFootage(item)}>Xóa</button></div>}</div></article>)}</div>
+      {mode === 'user' && room && <button className="secondary wide" disabled={busy} onClick={() => { setBusy(true); startRecognition(true).catch(fail).finally(() => setBusy(false)); }}>Cập nhật bộ mẫu</button>}
+      {mode === 'dev' && <details className="advanced-tools"><summary>Huấn luyện & kiểm thử</summary><p>Dùng lại footage đã lưu hoặc kiểm tra bằng video riêng.</p><button className="secondary wide" disabled={busy || !referenceClips.some(item => item.frameCount > 0)} onClick={() => void trainSaved()}>Huấn luyện lại</button><button className="secondary wide" disabled={busy || !readyClips.some(item => item.kind === 'validation')} onClick={() => void evaluate()}>Kiểm thử video riêng</button>{report && <p className="evaluation-report">{report}</p>}<p>{sampleCount} frame rõ, {skipped} frame bỏ qua trong lượt quay gần nhất.</p></details>}
+      <p className="drawer-status" role="status">{status}</p>
+      <a className="source-link" href="https://github.com/dakiemdarktharr/NoSleepClub_HIST" target="_blank" rel="noreferrer">Mã nguồn</a>
+    </Modal>}
+    {draft && <Modal title="Đặt tên khu vực" onClose={() => { setDraft(null); setError(''); }} locked={busy}>
+      <p className="draft-meta">{seconds(draft.duration)} / {sizeText(draft.blob.size)} / {draft.captured.length} frame rõ</p>
+      <form onSubmit={event => void submitFootage(event)} className="draft-form"><label htmlFor="place-name">Tên khu vực</label><input autoFocus id="place-name" placeholder="Bàn làm việc" maxLength={80} value={label} onChange={event => setLabel(event.target.value)} required disabled={busy || !!draft.savedId}/>
+        <details className="draft-options"><summary>Tùy chọn footage</summary><label htmlFor="footage-kind">Sử dụng</label><select id="footage-kind" value={kind} onChange={event => setKind(event.target.value as typeof kind)} disabled={busy || !!draft.savedId}><option value="reference">Mẫu nhận diện</option><option value="validation">Kiểm thử riêng</option></select><label className="checkbox-label"><input type="checkbox" checked={background} onChange={event => setBackground(event.target.checked)} disabled={busy || !!draft.savedId}/>Cảnh khác, dùng để từ chối nhận diện</label></details>
+        {!draft.captured.length && <p className="warning">Chưa có frame rõ. Giữ máy ổn định và quay lại ở nơi đủ sáng.</p>}
+        <button className="primary wide" disabled={busy || !label.trim() || !draft.captured.length || draft.blob.size > MAX_VIDEO_BYTES}>{busy ? <><i className="spinner"/>Đang học…</> : draft.savedId ? 'Thử huấn luyện lại' : 'Lưu & huấn luyện'}</button>
+      </form>
+      <div className="modal-actions"><button disabled={busy} onClick={() => saveBlob(draft.blob, `footage.${draft.blob.type.includes('mp4') ? 'mp4' : 'webm'}`)}>Tải video</button><button disabled={busy} onClick={() => { setDraft(null); setError(''); }}>{draft.savedId ? 'Đóng' : 'Bỏ video'}</button></div>
+      {busy && <p className="training-status" role="status">{status}</p>}{error && <p className="warning" role="alert">{error}</p>}
+    </Modal>}
+    {showQR && <Modal title={room ? 'Mở cùng bộ mẫu' : 'Mở HIST'} onClose={() => setShowQR(false)}><p>Quét bằng camera điện thoại. QR chỉ cấp quyền xem và nhận diện.</p>{qrImage && <img className="qr-image" src={qrImage} alt="Mã QR mở HIST"/>}<div className="qr-actions"><button onClick={() => { navigator.clipboard?.writeText(link).then(() => setStatus('Đã sao chép link.')).catch(fail); }}>Sao chép link</button><button disabled={!qrImage} onClick={() => { const a = document.createElement('a'); a.href = qrImage; a.download = 'HIST-QR.png'; a.click(); }}>Tải QR</button></div></Modal>}
+    {curtains}
   </>;
 }
