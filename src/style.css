@@ -127,3 +127,10 @@ html[data-locale=ko] h1,html[data-locale=zh] h1,html[data-locale=ja] h1{letter-s
   .map-search-sheet{width:300px;right:auto;max-height:calc(100% - 35px)}.route-sheet{left:auto;width:310px;max-height:70%}.map-canvas .leaflet-control-zoom{margin-top:12px}
   .camera-placeholder h1{font-size:27px}.placeholder-ornament{width:180px;margin-bottom:6px}.camera-placeholder p{margin-top:5px}.camera-start{margin-top:12px;min-height:44px}
 }
+/* Transit instructions remain legible inside the mobile route sheet. */
+.transit-steps h3,.transit-steps p,.transit-steps small{overflow-wrap:anywhere}
+.transit-steps h3{font-size:13px}.transit-steps p{font-size:12px}.transit-steps small{font-size:11px}
+.transfer-label{font-weight:600;color:var(--red);padding-bottom:6px}
+.transfer-directions summary{font-size:12px;min-height:44px;display:flex;align-items:center;text-decoration:underline;text-underline-offset:3px}
+.route-summary strong{flex-shrink:0}.route-summary span{text-align:right}
+.route-description{font-size:11px;line-height:1.7}.route-footnote{font-size:10px}

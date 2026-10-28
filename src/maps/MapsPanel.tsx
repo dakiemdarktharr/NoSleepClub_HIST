@@ -4,8 +4,9 @@ import { rpc } from '../client';
 import Icon from '../ui/Icon';
 import { useButtonMotion } from '../ui/Motion';
 import { coordinates, distance } from './geo';
-import { walkingKey } from './transit';
-import type { Journey, Place, RoadRoute, TravelMode } from './types';
+import { verifyJourney } from './verifyJourney';
+import TransitSteps from './TransitSteps';
+import type { Journey, Place, RoadRoute, TransitSearchOptions, TravelMode } from './types';
 import { useLocale } from '../i18n';
 import DestinationInput from './DestinationInput';
 import PinButton, { type Field } from './PinButton';
@@ -98,14 +99,14 @@ export default function MapsPanel() {
       setBusy(false);
     }, () => { if (mounted.current) { setError('Chưa lấy được vị trí. Cấp quyền hoặc nhập điểm đi.'); setBusy(false); } }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
   }
-  function transitPlan(from: Place, to: Place, blocked: string[]) {
+  function transitPlan(from: Place, to: Place, options: TransitSearchOptions) {
     if (!worker.current) {
       worker.current = new Worker(new URL('./transit.worker.ts', import.meta.url), { type: 'module' });
       worker.current.onmessage = ({ data }) => { const request = pending.current.get(data.id); if (!request) return; clearTimeout(request.timer); pending.current.delete(data.id); data.error ? request.reject(new Error(data.error)) : request.resolve(data.journey); };
       worker.current.onerror = () => { pending.current.forEach(item => { clearTimeout(item.timer); item.reject(new Error('Không mở được bộ tìm tuyến. Hãy tải lại trang.')); }); pending.current.clear(); };
     }
     const id = ++sequence.current;
-    return new Promise<Journey | null>((resolve, reject) => { const timer = setTimeout(() => { pending.current.delete(id); reject(new Error('Tìm tuyến quá lâu. Vui lòng thử lại.')); }, 20000); pending.current.set(id, { resolve, reject, timer }); worker.current!.postMessage({ id, origin: from, destination: to, blocked }); });
+    return new Promise<Journey | null>((resolve, reject) => { const timer = setTimeout(() => { pending.current.delete(id); reject(new Error('Tìm tuyến quá lâu. Vui lòng thử lại.')); }, 20000); pending.current.set(id, { resolve, reject, timer }); worker.current!.postMessage({ id, origin: from, destination: to, options }); });
   }
   async function plan(nextMode = mode) {
     if (!origin) { await search('origin'); return; } if (!destination) { await search('destination'); return; }
@@ -116,30 +117,13 @@ export default function MapsPanel() {
         setProgress('Đang tìm đường ngắn nhất…'); const data = await rpc<{ route: RoadRoute }>('maps.route', { origin, destination, mode: nextMode });
         if (current === generation.current && mounted.current) setRoad(data.route);
       } else {
-        const blocked: string[] = []; let accepted = false;
-        for (let attempt = 0; attempt < 4; attempt++) {
-          setProgress('Đang tìm tuyến và trạm chuyển…'); const result = await transitPlan(origin, destination, blocked);
-          if (!result) throw new Error('Chưa tìm thấy tuyến phù hợp trong dữ liệu hiện có: tối đa 2 lần chuyển, trạm cách mỗi đầu không quá 1 km.');
-          const walking = result.legs.filter(leg => leg.kind === 'walk'); let invalid = false;
-          for (let i = 0; i < walking.length; i++) {
-            setProgress(`Đang kiểm tra đường đi bộ ${i + 1}/${walking.length}…`);
-            const leg = walking[i], data = await rpc<{ route: RoadRoute }>('maps.route', { origin: leg.from, destination: leg.to, mode: 'walk' });
-            const maxWalk = leg.from.id === origin.id || leg.to.id === destination.id ? 1400 : 650;
-            if (data.route.meters > maxWalk) { blocked.push(walkingKey(leg.from, leg.to)); invalid = true; break; }
-            leg.coordinates = data.route.coordinates; leg.meters = data.route.meters;
-          }
-          if (invalid) continue;
-          result.legs = result.legs.reduce<Journey['legs']>((merged, leg) => {
-            const last = merged.at(-1);
-            if (last?.kind === 'walk' && leg.kind === 'walk') { last.to = leg.to; last.meters += leg.meters; last.coordinates.push(...leg.coordinates); }
-            else merged.push(leg);
-            return merged;
-          }, []);
-          result.meters = result.legs.reduce((sum, leg) => sum + leg.meters, 0);
-          if (current === generation.current && mounted.current) setJourney(result);
-          accepted = true; break;
-        }
-        if (!accepted) throw new Error('Chưa xác minh được lối đi bộ tới trạm. Hãy thử điểm đi/đến gần trạm hơn.');
+        const active = () => { if (!mounted.current || current !== generation.current) throw new Error('Đã đóng bản đồ.'); };
+        const result = await verifyJourney(async options => {
+          active(); setProgress('Đang tìm tuyến và trạm chuyển…'); return transitPlan(origin, destination, options);
+        }, async (from, to) => {
+          active(); return (await rpc<{ route: RoadRoute }>('maps.route', { origin: from, destination: to, mode: 'walk' })).route;
+        }, origin, destination, (i, count) => setProgress(`Đang kiểm tra đường đi bộ ${i}/${count}…`));
+        if (current === generation.current && mounted.current) { setJourney(result); setExpanded(true); }
       }
       if (mounted.current && current === generation.current) setCollapsed(true);
     } catch (error) { if (mounted.current && current === generation.current) setError((error as Error).message); }
@@ -166,10 +150,10 @@ export default function MapsPanel() {
       {error&&<p className="map-error" role="alert">{m(error)}</p>}
       {!hasRoute&&!busy&&<p className="map-hint">{t('mapHint')}</p>}
     </section>
-    {hasRoute&&<section className={`route-sheet ${expanded?'is-expanded':''}`} aria-label={t('journey')}><div className="route-summary"><strong>{metersText(road?road.meters:journey!.meters)}</strong><span>{road?t('minutes',{n:Math.max(1,Math.round(road.seconds/60))}):t('transfers',{lines:journey!.boardings,changes:Math.max(0,journey!.boardings-1)})}</span></div>
-      <p className="route-description">{t(road?'roadSummary':'transitSummary')}</p>
+    {hasRoute&&<section className={`route-sheet ${expanded?'is-expanded':''}`} aria-label={t('journey')}><div className="route-summary"><strong>{road?metersText(road.meters):t('estimatedMinutes',{n:Math.max(1,Math.round(journey!.seconds/60))})}</strong><span>{road?t('minutes',{n:Math.max(1,Math.round(road.seconds/60))}):<>{metersText(journey!.meters)}<br/>{t('transfers',{lines:journey!.boardings,changes:Math.max(0,journey!.boardings-1)})}</>}</span></div>
+      <p className="route-description">{t(road?'roadSummary':journey!.optimality==='model'?'fastestEstimate':'bestChecked')}{journey&&<><br/>{t('timeEstimateNotice')}</>}</p>
       {road&&<details onToggle={event=>setExpanded(event.currentTarget.open)}><summary>{t('routeSteps')}</summary><ol className="road-instructions">{road.instructions.map((instruction,i)=><li key={i}>{maneuverText(instruction,locale)}{instruction.meters>0&&<small> ({metersText(instruction.meters)})</small>}</li>)}</ol></details>}
-      {journey&&<><div className="route-line-chips">{journey.legs.filter(leg=>leg.line).map((leg,i)=><span className={`line-code ${leg.kind}`} key={i}>{t(leg.kind==='metro'?'metroLine':'busLine',{code:leg.line!.code})}</span>)}</div><button className="journey-expand" aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}>{t(expanded?'collapseJourney':'expandJourney')}</button>{expanded&&<ol className="transit-steps">{journey.legs.map((leg,index)=><li key={index} className={leg.kind==='walk'?'walk-leg':''}>{leg.kind==='walk'?<><h3>{t('walkDistance',{distance:metersText(leg.meters)})}</h3><p>{t('toPlace',{place:displayPlace(leg.to).name})}</p></>:<><span className={`line-code ${leg.kind}`}><Icon name="transit" size={14}/>{t(leg.kind==='metro'?'metroLine':'busLine',{code:leg.line!.code})}</span><h3>{t('boardAt',{place:displayPlace(leg.from).name})}</h3><small>{t('towards',{place:leg.line!.headsign})}</small><p>{t('alightAt',{place:displayPlace(leg.to).name})}</p><small>{t('sourceStopCount',{n:leg.stopCount||0})}</small></>}</li>)}</ol>}</>}
+      {journey&&<><div className="route-line-chips">{journey.legs.filter(leg=>leg.line).map((leg,i)=><span className={`line-code ${leg.kind}`} key={i}>{t(leg.kind==='metro'?'metroLine':'busLine',{code:leg.line!.code})}</span>)}</div><button className="journey-expand" aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}>{t(expanded?'collapseJourney':'expandJourney')}</button>{expanded&&<TransitSteps journey={journey} displayPlace={displayPlace}/>}</>}
       <p className="route-footnote">{road?t('roadFootnote'):t('transitFootnote',{date:new Intl.DateTimeFormat(locale,{dateStyle:'medium'}).format(new Date(journey!.updatedAt))})}</p>
     </section>}
   </section>;

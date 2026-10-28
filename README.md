@@ -208,21 +208,37 @@ Responses contain route geometry, distance, estimated time and maneuvers. Englis
 
 ### Bus and metro
 
-The committed EBMS snapshot contains 5,721 stops, 334 directed bus variants and two Metro 1 directions; results show the snapshot date. Source flags are handled conservatively. For example, the API labels Văn Thánh as “Chưa khai thác”, so the snapshot excludes local boarding/alighting there without asserting that the real station is closed.
+The committed [EBMS snapshot](public/data/hcm-transit.json) contains 5,707 stops, 311 directed regular-bus variants and two Metro 1 directions. School-only, sightseeing and waterbus services are excluded from this mode. Source flags are handled conservatively: the API labels Văn Thánh “Chưa khai thác”, so local boarding/alighting there is excluded without asserting the real station is closed.
 
-The transit worker builds stop nodes and directed line-position nodes, then searches with a binary min-heap Dijkstra. It uses this preference score, in metre-equivalent units:
+Results now show the line number, headsign, boarding/alighting stop or station, source addresses, stop count and estimated ride/wait times. Transfers distinguish staying at the same stop from walking to another stop. Verified walking legs include expandable street directions; the itinerary opens automatically.
+
+#### What “fastest estimate” means
+
+The objective is **total estimated seconds**, including walking, riding, waiting and station/boarding access:
 
 ```text
-score = ride distance between stops + 4 × walking distance + 1200 × boardings
+journey seconds = Σ walk seconds + Σ ride seconds + Σ expected wait + Σ access allowance
 ```
 
-The walking multiplier discourages long walks; the boarding penalty discourages transfers. For example, 1,000 m of riding, 100 m of walking and one boarding score `1000 + 400 + 1200 = 2600`. That is a search score, not a 2.6 km trip or a travel-time estimate.
+[EBMS direction metadata](https://apicms.ebms.vn/businfo/getvarsbyroute/1) provides full-line running time; [current timetable summaries](https://apicms.ebms.vn/businfo/gettimetablebyroute/1) provide headway ranges and published operating hours. The snapshot has running times for 312/313 directions and headways for 302/313. Partial rides receive a proportional share of full-line time according to the directed route shape. This is an average approximation, not per-stop arrival data or measured peak-hour speed. Expected wait is half the midpoint headway: an 8–20 minute headway yields 7 minutes. If multiple current summaries apply, the stored range spans them; the app does not select a departure date/calendar.
 
-Initial candidates use the nearest 12 stops within 1 km of each endpoint, transfers within 240 m, up to three boardings/two transfers, and a 2,400 m straight-line walking budget. A boarding must include a ride edge before alighting. Line-shape clipping advances monotonically through stop positions, including loops.
+Missing running times use 18 km/h for buses or 40 km/h for metro. Missing headways use expected waits of 7.5 and 5 minutes respectively. Boarding/access allowances are 30 seconds per bus boarding and 3 minutes per metro boarding, including estimated station circulation. These defaults are explicit assumptions. Affected legs are labeled in the itinerary.
 
-The UI verifies proposed walking legs against Valhalla's street network, allowing up to 1,400 m access/egress and 650 m per transfer. Failed connections are blocked and up to four alternatives are tried. Verified geometry replaces straight connectors; the final walking total may exceed the preliminary straight-line budget. Ride costs also use approximate inter-stop distances, so this constrained snapshot search does not guarantee a globally optimal or earliest-arrival journey.
+The worker runs a binary-heap, multi-label Dijkstra over physical stops and directed line-position nodes. Labels retain both elapsed time and consumed walking distance; dropping a slower, lower-walking label could incorrectly discard the only feasible connection. A boarding must include a ride before alighting. Ride costs use precomputed shape distances during search, rather than straight stop-to-stop distances corrected only after selection.
 
-There are no fares, timetable, wait times, last-service or live-disruption data. Users must check stop signs, direction and operating service. Refresh the public dataset explicitly with `node scripts/fetch-transit.mjs`; the importer throttles requests, resumes work cached for up to 24 hours, and does not run during builds.
+Search considers **every stop within 1 km** of each endpoint, transfers within 240 m straight-line separation, at most three boardings/two transfers, and a final 2,400 m walking budget. Verified street legs may be at most 1,400 m at either end or 650 m per transfer. Endpoint offsets of at most 2 m count as the same location. These limits deliberately constrain the candidate graph; walking-only trips are provided by Walking mode.
+
+#### Street verification and optimality limits
+
+[verifyJourney.ts](src/maps/verifyJourney.ts) initially uses straight-line walking lower bounds at 1.35 m/s. It replaces them with Valhalla street distance, geometry, maneuvers and time, then **searches again** so a competing route can overtake the first feasible result. Verified walking time is the greater of provider time and distance / 1.35 m/s; distance is never lower than the endpoint separation. Excessive street detours are blocked. The total walking budget is enforced again using verified costs.
+
+A settled result minimizes this fixed time model within the search constraints. Unverified walking edges remain lower bounds, so the search can stop when no candidate can beat a fully verified incumbent. A request is bounded by 24 new walking checks and 32 searches. If that budget or a provider error interrupts comparison after a feasible candidate exists, the UI says **“Best of the verified journeys”**, not “Fastest estimate”. Without a feasible candidate it reports an error.
+
+**This does not establish the fastest real-world journey or an arrival time.** There are no live vehicle arrivals, traffic, disruption, last-service or departure-calendar checks. Published hours are context, not a promise that a line is operating now. Average headways and proportional running times can mis-rank actual trips; walking-only journeys can also be quicker. The same limitation is visible beside the result and in all six UI languages. Confirm current service and direction before traveling.
+
+Refresh the full public dataset with `node scripts/fetch-transit.mjs`. To enrich an existing snapshot using cached direction metadata and current service summaries, use `node scripts/fetch-transit.mjs --service-only`; this preserves the route snapshot date. The importer throttles requests, resumes caches younger than 24 hours, and does not run during builds.
+
+Run `npm run audit:transit -- --write` for 119 reproducible graph scenarios (all 90 ordered landmark pairs, 24 directed metro pairs and five mixed feeder cases). It checks direction, board/alight indices, stop counts, transfer limits and the walking budget; the detailed report is written to ignored `.tmp/transit-audit.json`. This graph audit does not verify every street connector or current operation. [Transit time tests](tests/transit-time.test.ts) additionally compare 100 generated small networks against an independent exhaustive oracle and exercise waiting, transfers, road-cost re-ranking and bounded-result labels. See [the release audit](docs/audit-transit-time.md) for live-provider and mobile checks.
 
 The map API caches responses for 24 hours and uses MongoDB leases to space upstream requests by about 1.15 seconds per provider. It allows 150 map requests/IP/hour, with 10-second search and 14-second route timeouts. Community providers serve this free, low-traffic demo; higher traffic needs suitable providers or self-hosting.
 
