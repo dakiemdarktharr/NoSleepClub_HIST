@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { normalize, quality, TemporalGate } from '../src/recognition';
+import { normalize, predictionFreshness, quality, TemporalGate } from '../src/recognition';
 describe('quality and result timing', () => {
+  it('does not expire a valid label before a slow phone can process its next frame, and bounds stale output', () => {
+    expect(predictionFreshness(3000)).toBeGreaterThan(3060);
+    expect(predictionFreshness(30000)).toBeLessThanOrEqual(5000);
+  });
   it('normalizes descriptors and rejects invalid all-zero vectors', () => {
     expect(Math.hypot(...normalize([3, 4]))).toBeCloseTo(1);
     expect(() => normalize([0, 0])).toThrow();

@@ -6,6 +6,7 @@ export function normalize(vector: ArrayLike<number>): number[] {
   return values.map(value => Math.round(value / magnitude * 1e6) / 1e6);
 }
 export function cosine(a: number[], b: number[]) { return a.reduce((sum, value, index) => sum + value * b[index], 0); }
+export function predictionFreshness(latencyMs: number) { return Math.min(5000, Math.max(2500, latencyMs * 1.8 + 120)); }
 export function quality(data: Uint8ClampedArray, width: number, height: number): Quality {
   // Always measure at the same spatial scale; Laplacian variance is resolution-sensitive.
   const w = Math.min(256, width), h = Math.max(3, Math.round(height * w / width));

@@ -30,7 +30,7 @@ Nếu trình duyệt trong app nhắn tin chặn camera, mở link bằng Safari
 - Giữ các frame rõ trong 5 giây, rồi chọn tối đa 8 frame trải đều thời gian để trích đặc trưng. Không loại sạch video đứng yên vì ảnh gần trùng. Video gốc vẫn được lưu đầy đủ sau khi người Dev đặt tên.
 - Fit bộ phân loại few-shot với các prototype theo nhãn và các ảnh hỗ trợ. Đây là học bộ phân loại nhẹ trên đặc trưng DINOv2 có sẵn, không fine-tune toàn bộ backbone. Artifact `fewshot-dinov2-v3` được lưu trên MongoDB; phía User ưu tiên tải artifact gọn và cache IndexedDB.
 - Dùng khớp tốt nhất phù hợp với góc nhìn hiện tại; không lấy trung bình bắt buộc với góc khác không chồng lấn. Mọi tên trả về đều phải có ORB + RANSAC xác minh với ít nhất một frame hỗ trợ rõ, kể cả khi điểm DINOv2 rất cao. So với tối đa ba khu vực cạnh tranh; mẫu âm và các khu vực quá giống nhau được từ chối. Không bắt buộc hai ảnh hỗ trợ cùng khớp.
-- Bằng chứng hình học mạnh cũng trả tên ngay; mức vừa phải cần hai lượt cùng tên. Frame không rõ làm kết quả về `...`; kết quả cũ hết hạn sau 2,5 giây khi chưa có xác nhận mới.
+- Bằng chứng hình học mạnh cũng trả tên ngay; mức vừa phải cần hai lượt cùng tên. Frame không rõ làm kết quả về `...`; kết quả cũ hết hạn sau 2,5–5 giây tùy thời gian xử lý frame khi chưa có xác nhận mới.
 - Điểm cosine và số inlier là chỉ số đối chiếu, **không phải xác suất nhận diện đúng**. Ngưỡng ban đầu chưa được hiệu chỉnh bằng căn phòng thật của người dùng.
 - Footage chọn **Kiểm thử riêng** bị loại khỏi tập tham chiếu. Chạy kiểm thử trong Dev để đo đúng / nhầm / chưa chắc và cảnh lạ bị nhận nhầm trên bộ này.
 

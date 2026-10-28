@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { downloadFootage, loadCatalog, rememberRoom, restoreRoom, rpc, saveFootage, shareLink, Vision } from './client';
-import { quality, TemporalGate } from './recognition';
+import { predictionFreshness, quality, TemporalGate } from './recognition';
 import { currentModel, selectTrainingFrames, sourceIdsFor } from './fewshot';
 import { readModelCache, writeModelCache } from './model-cache';
 import { CAPTURE_SECONDS, MAX_VIDEO_BYTES, type CapturedFrame, type Feature, type Footage, type Mode, type Prediction, type Room, type TrainedClassifier } from './shared';
@@ -67,6 +67,7 @@ export default function App() {
   const startedAt = useRef(0);
   const temporal = useRef(new TemporalGate());
   const lastPredictionAt = useRef(0);
+  const freshnessMs = useRef(2500);
   const link = shareLink(room);
   const readyClips = footages.filter(item => item.status === 'ready');
   const referenceClips = readyClips.filter(item => item.kind === 'reference');
@@ -158,7 +159,7 @@ export default function App() {
   useEffect(() => {
     if (mode !== 'user') return;
     const timer = setInterval(() => {
-      if (performance.now() - lastPredictionAt.current > 2500) setPrediction(previous => previous.label ? { ...emptyPrediction, reason: 'Đang chờ khung hình xác nhận mới' } : previous);
+      if (performance.now() - lastPredictionAt.current > freshnessMs.current) setPrediction(previous => previous.label ? { ...emptyPrediction, reason: 'Đang chờ khung hình xác nhận mới' } : previous);
     }, 250);
     return () => clearInterval(timer);
   }, [mode]);
@@ -177,6 +178,7 @@ export default function App() {
         rememberRoom(target); setRoom(target); history.replaceState(null, '', '?room=' + target.id);
         setFootages([]); setStatus('Phòng test mới đã sẵn sàng. Quay từng khu vực rồi đặt tên.');
       } else if (room) { clips = await refresh(room); setStatus(next === 'dev' ? 'Quay một video 5 giây để dạy khu vực.' : 'Đang chuẩn bị bộ mẫu đã học…'); }
+      if (!target) setStatus('Mở QR phòng để nạp bộ mẫu.');
       setTab('camera'); setMode(next);
       if (target) void prewarm(target, clips).catch(fail);
     } catch (error) { fail(error); } finally { setBusy(false); }
@@ -207,6 +209,7 @@ export default function App() {
           if (current !== generation.current || !recognizing.current) break;
           setQualityLabel(`${next.inliers ? `${next.inliers} chi tiết khớp` : next.reason}${next.latencyMs !== undefined ? ` · ${next.latencyMs} ms` : ''}`);
           lastPredictionAt.current = performance.now();
+          freshnessMs.current = predictionFreshness(next.latencyMs || 0);
           setPrediction(temporal.current.push(next));
       } catch (error) { fail(error); setPrediction(emptyPrediction); break; }
       await new Promise(resolve => setTimeout(resolve, 60));
@@ -381,7 +384,7 @@ export default function App() {
               {mode === 'user' && camera && <div className={`recognition-result ${prediction.label ? 'matched' : ''}`} role="status" aria-live="polite" aria-atomic="true"><span>{prediction.label ? 'Đang ở' : 'Chưa xác nhận'}</span><strong>{prediction.label || '...'}</strong>{!prediction.label && <p>{prediction.reason}</p>}</div>}
               {mode === 'dev' && camera && <div className="capture-controls"><div className="capture-side">{recording ? <><strong>{sampleCount}</strong><span>frame rõ</span></> : <span>5 giây</span>}</div><button className={`capture-button ${recording ? 'is-recording' : ''}`} aria-label={recording ? 'Dừng quay' : 'Quay mẫu 5 giây'} disabled={busy || !!draft} onClick={recording ? stopRecording : startRecording}><span/></button><div className="capture-side"><span>{recording ? 'Dừng' : 'Quay mẫu'}</span></div></div>}
             </div>
-            <div className="camera-status"><span className="quality-label"><i className={modelReady ? 'ready' : ''}/>{camera ? qualityLabel : modelReady ? 'Bộ nhận diện sẵn sàng' : 'Đang tải bộ nhận diện…'}</span>{visibleStatus && <span className="process-status" role="status">{busy && <i className="spinner"/>}{visibleStatus}</span>}</div>
+            <div className="camera-status"><span className="quality-label"><i className={modelReady ? 'ready' : ''}/>{!modelReady ? status : camera ? qualityLabel : 'Bộ nhận diện sẵn sàng'}</span>{visibleStatus && <span className="process-status" role="status">{busy && <i className="spinner"/>}{visibleStatus}</span>}</div>
           </section>
           {mode === 'user' && tab === 'maps' && <Suspense fallback={<div className="map-loading" role="status">Đang mở bản đồ…</div>}><MapsPanel/></Suspense>}
           {error && <div className="error-toast" role="alert"><span>{error}</span><button className="icon-button" aria-label="Đóng thông báo lỗi" onClick={() => setError('')}><Icon name="close"/></button></div>}

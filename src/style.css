@@ -31,3 +31,4 @@
 @media(max-width:390px){.title-center h1{font-size:clamp(45px,14.8vw,58px)}}
 .title-first-line{display:block;white-space:nowrap}.title-screen:before{content:'';position:absolute;z-index:-1;pointer-events:none;top:14%;bottom:12%;width:min(890px,79%);border:1px solid #9ca38a35;border-radius:440px 440px 0 0}.role-button.dev-role{background:var(--paper)}
 @media(min-width:761px){.title-center h1{font-size:clamp(80px,9vw,136px)}}
+@media(max-width:760px){input:not([type=checkbox]),select,.place-input-row input{font-size:16px}}

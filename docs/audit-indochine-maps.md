@@ -26,7 +26,7 @@ Camera User tiếp tục xử lý trên thiết bị. Maps chỉ gửi tên / t�
 
 ## Kiểm tra trước bàn giao
 
-- TypeScript, production build và 26 unit tests: chất lượng ảnh, one-shot, mẫu âm, nhãn mơ hồ, từ chối semantic-only, chống nhảy nhãn yếu; transit có hướng, chuyển trạm, chặn lối đi không xác minh được, ngoài vùng và decode polyline.
+- TypeScript, production build và 27 unit tests: chất lượng ảnh, one-shot, mẫu âm, nhãn mơ hồ, từ chối semantic-only, chống nhảy nhãn yếu; transit có hướng, chuyển trạm, chặn lối đi không xác minh được, ngoài vùng và decode polyline.
 - Browser viewport 320×568, 390×844, 768×1024, 1440×900: landing đúng hai nút, không tràn ngang. Ở viewport 390×844, camera chiếm khoảng 84% diện tích màn hình.
 - Model thật + camera giả lập: một clip 5 giây / cảnh, 26 frame rõ giữ lại, chọn 8 frame. Lưu và học cảnh đầu khoảng 7,6 giây; User hiện tên sau khoảng 860 ms từ bật camera khi model sẵn sàng, suy luận 683 ms, 145 chi tiết khớp. 11 lượt cập nhật liên tiếp giữ đúng cùng nhãn. Hai cảnh sau zoom 1,04×, dịch 8/5 px, sáng 80% vẫn nhận đúng và đổi A→B→A; 74 / 33 inliers, khoảng 641–693 ms. Đây là kiểm tra tổng hợp, không phải accuracy căn phòng thật hay tốc độ điện thoại thật.
 - Camera mờ trả `...`; cảnh kệ chưa học trả `...` sau khi chờ frame mới. Không giữ nhãn cũ để giả ổn định.
@@ -40,3 +40,5 @@ Commit ứng dụng `4829c45` và sửa đóng gói font `44ae8f0` đã qua CI (
 Trên HTTPS production đã kiểm tra geocoding, tile có ảnh thật, đường đi bộ, xe máy và Metro 1 từ cặp điểm Bến Thành → Nhà hát Thành phố. Quay/lưu/huấn luyện một clip 5 giây thành công. Một context trình duyệt mới chỉ có read key đã nạp `fewshot-dinov2-v3` qua `workspace.get` + `model.get`, không tải `frames.get` hay train lại; nhận đúng cảnh tổng hợp, 145 chi tiết khớp, 964 ms suy luận trên máy thử. Không thấy lỗi console ở bản font đã sửa hoặc error/fatal trong cửa sổ runtime logs kiểm tra. Các fixture do mình tạo ở localhost và production đã được xóa. Bộ phân loại dẫn xuất của phòng có footage thật được cập nhật v3; video và frame gốc giữ nguyên.
 
 Chưa đo camera phần cứng của người dùng và chưa xác nhận từng tuyến ở thực địa. Không coi kết quả camera giả lập là accuracy của căn phòng thật.
+
+Bổ sung cho điện thoại chậm: thời hạn kết quả thích nghi theo độ trễ suy luận, giới hạn 2,5–5 giây; bằng chứng mới không khớp vẫn xóa ngay. Trạng thái tải model hiển thị trên mobile. Ô nhập mobile dùng 16 px để tránh Safari tự zoom khi focus. Có regression test cho suy luận 3 giây/frame.
