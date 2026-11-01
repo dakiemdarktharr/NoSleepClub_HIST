@@ -26,3 +26,17 @@ Camera permission and playback now finish separately from cold vision-model prep
 - The 18 role/language/viewport combinations at 320×740, 390×844 and 844×390 passed. Desktop visual checks used 1440×1000.
 - The Dev journey passed permission-denial/retry, camera switching, automatic/manual stop, naming, failed-save draft retention/download, retry, saved-video download, retrain, reader-only QR/copy/download, validation/evaluation and deletion of isolated test data. This uses real browser MediaRecorder/canvas capture with simulated vision/storage responses; it is not an accuracy test or a physical-phone camera test.
 - 73 unit tests passed, including walking/same-stop/mixed/repeated-service presentation and deliberate-swipe criteria. Production checks are tied to the pushed commit separately.
+
+## Production receipt
+
+The public alias served code commit `972d13fa73af71e271db966336ae4ec922dd7297` from Vercel deployment `dpl_6SMvU6xxREmgp4Hs9emuWmRW33tX` in READY state. [CI run 41328804023](https://github.com/dakiemdarktharr/NoSleepClub_HIST/actions/runs/41328804023) passed for that commit. The browser entry bundle matched the local production build.
+
+The live browser check used the real transit worker, network snapshot, map tiles, route-verification API and MongoDB cache. It observed:
+
+- Independence Palace → Củ Chi: bus **13 → 79**, with alighting and boarding at **Bến xe Củ Chi**. Red and blue appeared in the legend/stop markers and transfer instructions.
+- Củ Chi → Nhà Rồng Wharf: bus **79 → 13 → 20**, with three distinct colours. The second change explicitly alighted at **Sân khấu Sen Hồng, 94–96 Lê Lai**, walked **282 m** to **Trường Emst Thalmann, Phạm Ngũ Lão**, and boarded bus 20 toward Bến xe buýt Bình Khánh. This result differed from the unverified graph fixture because real street connectors were checked.
+- 29 route-verification API calls returned HTTP 200 across those two searches. Database health reported connected. These are observed route-planning results, not verification of live arrivals or a trip undertaken on the vehicles.
+- Real touch swipes opened Maps and returned to Camera; the route and collapsed transfer summary survived a round trip between views. Existing 3D models loaded. A stop popup opened and its close button remained clickable above the route panel.
+- The tile SVG returned HTTP 200; the title/header/QR used **Nếp Phố**. The public app QR title was **Mở Nếp Phố**.
+
+No browser page exceptions, console errors, WebGL errors or CSP failures were recorded. The production browser was a touch-capable phone emulation, also resized to desktop; physical phone hardware was not used.
