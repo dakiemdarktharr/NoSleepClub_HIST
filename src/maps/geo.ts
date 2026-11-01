@@ -1,4 +1,4 @@
-import type { Place } from './types';
+import type { Place } from './types.js';
 export const coordinates = (point: Place): [number, number] => [point.lat, point.lon];
 export function distance(a: Pick<Place, 'lat' | 'lon'>, b: Pick<Place, 'lat' | 'lon'>) {
   const rad = Math.PI / 180, lat = (b.lat - a.lat) * rad, lon = (b.lon - a.lon) * rad;

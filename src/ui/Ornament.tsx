@@ -1,6 +1,6 @@
-// Native SVG recreations of the Canva concept. Sources and editable paths: public/art/.
+// User's hand-drawn dragon; other ornaments follow the Canva concept. Editable paths: public/art/.
 export function CloudDragon({ className = '' }: { className?: string }) {
-  return <svg className={className} viewBox="0 0 640 180" aria-hidden="true" data-artwork="indochine-dragon"><use href="/art/dragon.svg#artwork"/></svg>;
+  return <svg className={className} viewBox="100 25 1245 545" aria-hidden="true" data-artwork="sketch-dragon-placeholder"><use href="/art/dragon.svg#artwork"/></svg>;
 }
 export function Lantern() {
   return <svg className="lantern" viewBox="0 0 96 240" aria-hidden="true"><use href="/art/lantern.svg#artwork"/></svg>;

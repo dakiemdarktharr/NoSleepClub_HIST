@@ -42,6 +42,7 @@ export default function App() {
   const [background, setBackground] = useState(false);
   const [kind, setKind] = useState<'reference' | 'validation'>('reference');
   const [showQR, setShowQR] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [qrImage, setQrImage] = useState('');
   const [joinLink, setJoinLink] = useState('');
   const [report, setReport] = useState('');
@@ -171,20 +172,24 @@ export default function App() {
     QRCode.toDataURL(link, { width: 640, margin: 3, errorCorrectionLevel: 'M', color: { dark: '#172c42', light: '#ffffff' } }).then(setQrImage).catch(fail);
   }, [showQR, link]);
 
-  async function enter(next: Mode) {
-    setBusy(true); setError('');
-    try {
-      let target = room;
-      let clips: Footage[] = [];
-      if (next === 'dev' && !room?.writeKey) {
-        target = await rpc<Room>('workspace.create');
-        rememberRoom(target); setRoom(target); history.replaceState(null, '', '?room=' + target.id);
-        setFootages([]); setStatus('Phòng test mới đã sẵn sàng. Quay từng khu vực rồi đặt tên.');
-      } else if (room) { clips = await refresh(room); setStatus(next === 'dev' ? 'Quay một video 5 giây để dạy khu vực.' : 'Đang chuẩn bị bộ mẫu đã học…'); }
-      if (!target) setStatus('Mở QR phòng để nạp bộ mẫu.');
-      setTab('camera'); setMode(next);
-      if (target) void prewarm(target, clips).catch(fail);
-    } catch (error) { fail(error); } finally { setBusy(false); }
+  function enter(next: Mode) {
+    setError(''); setTab('camera'); setMode(next);
+    setStatus(next === 'dev' ? 'Quay một video 5 giây để dạy khu vực.' : 'Mở QR phòng để nạp bộ mẫu.');
+    if (room) void refresh(room).then(clips => {
+      if (next === 'user') return prewarm(room, clips);
+    }).catch(fail);
+  }
+  async function ensureDeveloperRoom() {
+    if (room?.writeKey) return room;
+    const target = await rpc<Room>('workspace.create');
+    setRoom(target); activeModelRoom.current = target.id; rememberRoom(target);
+    history.replaceState(null, '', '?room=' + target.id); setFootages([]);
+    return target;
+  }
+  async function openQR() {
+    setLibraryOpen(false); setBusy(true); setError(''); setLinkCopied(false);
+    try { if (mode === 'dev') await ensureDeveloperRoom(); setShowQR(true); }
+    catch (error) { fail(error); } finally { setBusy(false); }
   }
   async function openCamera() {
     setBusy(true); setError(''); stopCamera(); const current = cameraGeneration.current;
@@ -230,7 +235,7 @@ export default function App() {
     void loop();
   }
   function startRecording() {
-    if (!stream.current || !room?.writeKey) return;
+    if (!stream.current) return;
     setError('');
     if (!window.MediaRecorder) { setError('Trình duyệt chưa hỗ trợ quay video. Hãy cập nhật Chrome hoặc Safari.'); return; }
     const mime = ['video/webm;codecs=vp8', 'video/webm', 'video/mp4'].find(value => MediaRecorder.isTypeSupported(value));
@@ -272,7 +277,7 @@ export default function App() {
     setRecording(false);
   }
   async function submitFootage(event: React.FormEvent) {
-    event.preventDefault(); if (!draft || !room || !label.trim()) return;
+    event.preventDefault(); if (!draft || !label.trim()) return;
     setBusy(true); setError('');
     try {
       if (draft.blob.size > MAX_VIDEO_BYTES) throw new Error('Video vượt 24 MB của bản test. Tải video về để giữ lại, rồi quay đoạn ngắn hơn.');
@@ -290,12 +295,13 @@ export default function App() {
         if (!frames.length) throw new Error('Không đọc được frame rõ từ video. Hãy quay lại nơi có ánh sáng tốt hơn.');
         setDraft(previous => previous ? { ...previous, frames } : previous);
       }
+      const target = await ensureDeveloperRoom();
       if (!draft.savedId) {
-        const savedId = await saveFootage(room, draft.blob, frames, { label: label.trim(), kind, background, duration: draft.duration, cover: draft.cover }, setStatus);
+        const savedId = await saveFootage(target, draft.blob, frames, { label: label.trim(), kind, background, duration: draft.duration, cover: draft.cover }, setStatus);
         setDraft(previous => previous ? { ...previous, frames, savedId } : previous);
       }
-      const clips = await refresh();
-      const trained = await prepareClassifier(room, clips, true);
+      const clips = await refresh(target);
+      const trained = await prepareClassifier(target, clips, true);
       preparation.current = Promise.resolve(trained);
       setError('');
       setDraft(null); setStatus(`Đã huấn luyện ${trained.classes.filter(item => !item.background).length} khu vực. Chuyển sang User để thử ngay.`);
@@ -367,8 +373,8 @@ export default function App() {
         <Lantern/>
         <div className="title-center"><CloudDragon className="title-ornament"/><h1><ChangingTitle/></h1>
           <div className="role-choices" aria-label={t('chooseRole')}>
-            <button className="role-button user-role" disabled={busy || transitioning} onClick={event => void transition('iris', () => enter('user'), event)}><span>{t('user')}</span><Icon name="chevron"/></button>
-            <button className="role-button dev-role" disabled={busy || transitioning} onClick={event => void transition('iris', () => enter('dev'), event)}><span>{t('dev')}</span><Icon name="chevron"/></button>
+            <button className="role-button user-role" disabled={busy || transitioning} onClick={event => void transition('iris', () => enter('user'), event).catch(fail)}><span>{t('user')}</span><Icon name="chevron"/></button>
+            <button className="role-button dev-role" disabled={busy || transitioning} onClick={event => void transition('iris', () => enter('dev'), event).catch(fail)}><span>{t('dev')}</span><Icon name="chevron"/></button>
           </div>
           {busy && <p className="title-feedback" role="status">{t('opening')}</p>}
           {error && <p className="title-feedback error-text" role="alert">{m(error)}</p>}
@@ -396,13 +402,14 @@ export default function App() {
       </>}
     </div>
     {libraryOpen && <Modal title={t('library')} drawer onClose={() => setLibraryOpen(false)} locked={busy}>
-      <details className="language-settings"><summary>{t('language')}</summary><LanguageChoices/></details><div className="library-toolbar"><p>{t('referenceCount', {n: referenceClips.length})}</p><button onClick={() => { setLibraryOpen(false); setShowQR(true); }}><Icon name="qr"/>{t('roomQR')}</button></div>
+      <details className="language-settings"><summary>{t('language')}</summary><LanguageChoices/></details><div className="library-toolbar"><p>{t('referenceCount', {n: referenceClips.length})}</p><button onClick={() => void openQR()}><Icon name="qr"/>{t('roomQR')}</button></div>
       {!room && <form className="join-form" onSubmit={join}><label htmlFor="join-link">{t('roomLink')}</label><div className="input-action"><input id="join-link" type="url" onInvalid={event=>event.currentTarget.setCustomValidity(t('validRoomLink'))} value={joinLink} onChange={event => {event.currentTarget.setCustomValidity('');setJoinLink(event.target.value);}} placeholder={t('pasteLink')} required/><button type="submit" aria-label={t('openRoom')}><Icon name="chevron"/></button></div></form>}
       {!footages.length && <div className="empty-library"><Icon name="record" size={32}/><h3>{t('noPlaces')}</h3><p>{mode === 'dev' ? t('noPlacesDev') : t('noPlacesUser')}</p></div>}
       <div className="footage-list">{footages.map(item => <article className="footage" key={item.id}><img src={item.cover} alt={t('coverAlt', {name: item.label})}/><div className="footage-copy"><h3>{item.label}</h3><p>{seconds(item.duration)} / {t('frames', {n: item.frameCount})}</p><small>{item.status === 'pending' ? t('pendingUpload') : item.kind === 'validation' ? t('validation') : item.background ? t('background') : t('reference')}</small>{mode === 'dev' && <div className="footage-actions">{item.status === 'ready' && <button disabled={busy} onClick={() => void download(item)}>{t('downloadVideo')}</button>}<button disabled={busy} onClick={() => void removeFootage(item)}>{t('delete')}</button></div>}</div></article>)}</div>
       {mode === 'user' && room && <button className="secondary wide" disabled={busy} onClick={() => { setBusy(true); startRecognition(true).catch(fail).finally(() => setBusy(false)); }}>{t('refreshReferences')}</button>}
       {mode === 'dev' && <details className="advanced-tools"><summary>{t('trainTest')}</summary><p>{t('trainTestHint')}</p><button className="secondary wide" disabled={busy || !referenceClips.some(item => item.frameCount > 0)} onClick={() => void trainSaved()}>{t('retrain')}</button><button className="secondary wide" disabled={busy || !readyClips.some(item => item.kind === 'validation')} onClick={() => void evaluate()}>{t('evaluate')}</button>{report && <p className="evaluation-report">{m(report)}</p>}<p>{t('lastCapture', {clear: sampleCount, skipped})}</p></details>}
       <p className="drawer-status" role="status">{m(status)}</p>
+      {error && <p className="warning" role="alert">{m(error)}</p>}
       <a className="source-link" href="https://github.com/dakiemdarktharr/NoSleepClub_HIST" target="_blank" rel="noreferrer">{t('sourceCode')}</a>
     </Modal>}
     {draft && <Modal title={t('namePlace')} onClose={() => { setDraft(null); setError(''); }} locked={busy}>
@@ -415,7 +422,7 @@ export default function App() {
       <div className="modal-actions"><button disabled={busy} onClick={() => saveBlob(draft.blob, `footage.${draft.blob.type.includes('mp4') ? 'mp4' : 'webm'}`)}>{t('downloadVideo')}</button><button disabled={busy} onClick={() => { setDraft(null); setError(''); }}>{draft.savedId ? t('close') : t('discardVideo')}</button></div>
       {busy && <p className="training-status" role="status">{m(status)}</p>}{error && <p className="warning" role="alert">{m(error)}</p>}
     </Modal>}
-    {showQR && <Modal title={room ? t('shareReferences') : t('openApp')} onClose={() => setShowQR(false)}><p>{t('qrHint')}</p>{qrImage && <img className="qr-image" src={qrImage} alt={t('qrAlt')}/>}<div className="qr-actions"><button onClick={() => { navigator.clipboard?.writeText(link).then(() => setStatus('Đã sao chép link.')).catch(fail); }}>{t('copyLink')}</button><button disabled={!qrImage} onClick={() => { const a = document.createElement('a'); a.href = qrImage; a.download = 'HIST-QR.png'; a.click(); }}>{t('downloadQR')}</button></div></Modal>}
+    {showQR && <Modal title={room ? t('shareReferences') : t('openApp')} onClose={() => setShowQR(false)}><p>{t('qrHint')}</p>{qrImage && <img className="qr-image" src={qrImage} alt={t('qrAlt')}/>}<input aria-label={t('roomLink')} readOnly value={link} onFocus={event => event.currentTarget.select()}/><div className="qr-actions"><button disabled={!navigator.clipboard} onClick={() => { navigator.clipboard?.writeText(link).then(() => setLinkCopied(true)).catch(fail); }}>{t('copyLink')}</button><button disabled={!qrImage} onClick={() => { const a = document.createElement('a'); a.href = qrImage; a.download = 'HIST-QR.png'; a.click(); }}>{t('downloadQR')}</button></div>{linkCopied && <p role="status">{m('Đã sao chép link.')}</p>}{error && <p className="warning" role="alert">{m(error)}</p>}</Modal>}
     {curtains}
   </>;
 }

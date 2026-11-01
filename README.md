@@ -18,6 +18,8 @@ A mobile web proof of concept with two features:
 
 The QR above opens the app only. A **room QR** additionally grants access to that room's recordings and recognition references. User and Dev are test modes; they are not account logins. In Vietnamese, these modes are labelled **Người dùng** and **Nhà phát triển**.
 
+Dev entry and recording do not wait for MongoDB. A writable room is created only when saving/training or sharing a Dev QR; a room/storage error leaves the recorded draft available to retry or download. Existing-room refresh runs in the background. RPC calls abort after 25 seconds rather than holding controls indefinitely. In browsers that block persistent storage, the current session can continue but room credentials will not survive a reload.
+
 Five seconds is the recording duration, not a promise of five-second training or instant startup. A new device must download and initialize the vision backbone. Once ready, a strong match can return a name from the first processed frame. Later views still need visual overlap with the recorded place.
 
 ## Architecture and data flow
@@ -82,6 +84,7 @@ Keep credentials server-side. Variables prefixed with `VITE_` are exposed to cli
 
 ```powershell
 npm run typecheck
+npm run typecheck:server
 npm test
 npm run build
 npm audit --audit-level=high
@@ -264,11 +267,11 @@ Each fresh entry offers English, Vietnamese, Korean, Simplified Chinese, Japanes
 
 All typefaces are self-hosted. CJK font CSS is registered at entry so native language names also use the selected design family; unicode-range subsets load only for glyphs that are displayed. Noto Serif supplies Latin/Vietnamese/Cyrillic; language-specific Noto Serif KR/SC/JP covers the other writing systems. Catalog checks cover every locale and interpolation parameter. Vietnamese runtime messages use registered source templates; unexpected messages still receive a safe localized fallback. Footage labels, street/stop names and line headsigns retain their source proper names. Map tile text and browser permission prompts are outside the app's translation catalog.
 
-The paper/ink interface uses a serif newspaper type hierarchy with condensed heavy headlines and quieter reading text. Four [editable native SVG ornaments](public/art/README.md)—dragon, lantern, river pavilion and lotus compass—were recreated from the user-requested Canva concept. The connector produced raster concept art; these SVGs are manually redrawn paths, not Canva SVG exports. Camera occupies most of the workspace; library, QR and evaluation use a focus-trapped drawer. Mobile inputs are at least 16 px and main controls target 44 px. Reduced motion bypasses the animated curtains/typewriter. See the linked audits for tested viewports and the limits of synthetic camera tests.
+The paper/ink interface uses a serif newspaper type hierarchy with condensed heavy headlines and quieter reading text. The [editable SVG dragon](public/art/dragon.svg) restores the user's own drawing from commit `a4ba34b`. The other [native SVG ornaments](public/art/README.md)—lantern, river pavilion and lotus compass—follow the Canva concept. The connector produced raster concept art; these SVGs are manually redrawn paths, not Canva SVG exports. Camera occupies most of the workspace; library, QR and evaluation use a focus-trapped drawer. Mobile inputs are at least 16 px and main controls target 44 px. Reduced motion bypasses the animated curtains/typewriter. See the linked audits for tested viewports and the limits of synthetic camera tests.
 
 ## Deployment and troubleshooting
 
-GitHub `main` is connected to Vercel project `nosleepclub-hist`. Builds output `dist`; functions run in `sin1` with a 30-second limit. GitHub Actions runs typecheck, tests, build and dependency audit. A release is complete only when CI passes, Vercel is READY for the same commit, and the public alias passes an HTTPS smoke check.
+GitHub `main` is connected to Vercel project `nosleepclub-hist`. Builds output `dist`; functions run in `sin1` with a 30-second limit. GitHub Actions runs frontend and NodeNext server typechecks, tests, build and dependency audit. Verify CI and the production alias against the same commit, then exercise the database-backed API and capture/train flow. A READY deployment or an HTTP 200 for the HTML shell alone does not establish that those workflows work.
 
 `MONGODB_URI` is a sensitive production server variable. Protected previews do not receive that credential. Atlas M0 is in the separate `NoSleepClub_HIST` test project with a database-scoped read/write user. The owner approved `0.0.0.0/0` network access for this test because Vercel egress IPs vary; TLS and credentials remain required.
 
@@ -290,3 +293,5 @@ CSP limits scripts/fonts to self and allows the model-delivery and selected map 
 * [Technical research](docs/research.md), [recognition validation](docs/validation.md), [five-second audit](docs/audit-five-second.md), [map/UI audit](docs/audit-indochine-maps.md), [localization audit](docs/audit-localization.md), [translation/motion review](docs/translation-review.md), [Vietnamese and README verification](docs/audit-vietnamese-readme.md)
 
 The [typography and map audit](docs/audit-map-redesign.md) covers font glyph rendering, pin-address races, pitched-map interactions, provider failure and graphics-context recovery. Historical audits describe the versions they tested. Current behavior is defined by the code; synthetic tests do not establish real-world recognition accuracy or current transit operation.
+
+The [mobile interaction audit](docs/audit-mobile-interactions.md) records the Dev entry repair, server ESM import failure, restored sketch and interaction test coverage.

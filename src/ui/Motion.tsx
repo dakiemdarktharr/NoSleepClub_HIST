@@ -62,24 +62,31 @@ export function useCurtain() {
     if (locked.current) return;
     locked.current = true; setTransitioning(true);
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let coveredCalled = false;
+    const cover = async () => { coveredCalled = true; await covered(); };
     try {
-      if (reduce) { await covered(); return; }
+      if (reduce) { await cover(); return; }
       if (kind === 'iris' && iris.current) {
         const x = event?.detail ? event.clientX : innerWidth / 2, y = event?.detail ? event.clientY : innerHeight / 2;
         const radius = Math.hypot(innerWidth, innerHeight);
         iris.current.style.visibility = 'visible'; iris.current.style.opacity = '1';
         await animate(iris.current, { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] }, { duration: .72, ease: [.45, 0, .55, 1] });
-        await covered();
+        await cover();
         await animate(iris.current, { opacity: [1, 0] }, { duration: .48, ease: 'easeInOut' });
         iris.current.style.visibility = 'hidden';
       } else if (wipes.current) {
         const panels = [...wipes.current.children]; wipes.current.style.visibility = 'visible';
         await animate(panels, { scaleY: [0, 1] }, { duration: .48, delay: stagger(.065), ease: [.45, 0, .55, 1] });
-        await covered();
+        await cover();
         await animate(panels, { scaleY: [1, 0] }, { duration: .48, delay: stagger(.055), ease: [.45, 0, .55, 1] });
         wipes.current.style.visibility = 'hidden';
       }
-    } finally { locked.current = false; setTransitioning(false); }
+    } catch (error) { if (!coveredCalled) await cover(); else throw error; }
+    finally {
+      if (iris.current) iris.current.style.visibility = 'hidden';
+      if (wipes.current) wipes.current.style.visibility = 'hidden';
+      locked.current = false; setTransitioning(false);
+    }
   }
   const curtains: ReactNode = <div aria-hidden="true"><div className="iris-curtain" ref={iris}><CloudDragon/><span>HIST</span></div><div className="wipe-curtain" ref={wipes}>{Array.from({ length: 5 }, (_, i) => <i key={i}/>)}</div></div>;
   return { transition, transitioning, curtains };

@@ -1,10 +1,14 @@
 import { CHUNK_SIZE, MODEL, type Room, type Footage, type Feature, type CatalogFrame } from './shared';
 export async function rpc<T>(action: string, data: Record<string, unknown> = {}, room?: Room, write = false): Promise<T> {
-  const response = await fetch('/api/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, ...data, ...(room ? { roomId: room.id, key: write ? room.writeKey : room.writeKey || room.readKey } : {}) }) });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || 'Không kết nối được máy chủ.');
-  return result as T;
+  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch('/api/rpc', { method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...data, ...(room ? { roomId: room.id, key: write ? room.writeKey : room.writeKey || room.readKey } : {}) }) });
+    const result = await response.json().catch(() => { throw new Error('Không kết nối được máy chủ.'); });
+    if (!response.ok) throw new Error(result.error || 'Không kết nối được máy chủ.');
+    return result as T;
+  } catch (error) { if (controller.signal.aborted) throw new Error('Không kết nối được máy chủ.'); throw error; }
+  finally { clearTimeout(timeout); }
 }
 export async function loadCatalog(room: Room, footages: Footage[]) {
   const frames: CatalogFrame[] = [];
@@ -49,7 +53,10 @@ export async function downloadFootage(room: Room, footage: Footage, progress: (v
   return new Blob(parts, { type: footage.mime });
 }
 const STORAGE = 'nosleepclub-hist-room-v1';
-export function rememberRoom(room: Room) { localStorage.setItem(STORAGE + ':' + room.id, JSON.stringify(room)); localStorage.setItem(STORAGE, room.id); }
+export function rememberRoom(room: Room) {
+  try { localStorage.setItem(STORAGE + ':' + room.id, JSON.stringify(room)); localStorage.setItem(STORAGE, room.id); }
+  catch { /* The current session still works when persistent browser storage is unavailable. */ }
+}
 export function restoreRoom(): Room | null {
   try {
     const url = new URL(location.href), id = url.searchParams.get('room') || localStorage.getItem(STORAGE);

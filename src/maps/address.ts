@@ -1,4 +1,4 @@
-import { distance } from './geo';
+import { distance } from './geo.js';
 export interface ReverseFeature {
   properties: { name?: string; housenumber?: string | number; street?: string; district?: string; locality?: string; city?: string; county?: string; country?: string };
   geometry: { coordinates: [number, number] };
