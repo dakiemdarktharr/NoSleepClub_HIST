@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Map, Marker, type GeoJSONSource, type StyleSpecification, setWorkerCount, setWorkerUrl } from 'maplibre-gl';
+import { Map, Marker, Popup, type GeoJSONSource, type StyleSpecification, setWorkerCount, setWorkerUrl } from 'maplibre-gl';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { useLocale } from '../i18n';
 import { CompassSeal } from '../ui/Ornament';
@@ -7,6 +7,7 @@ import type { Field } from './PinButton';
 import type { Journey, Place, RoadRoute } from './types';
 import { attachSiteModel, createSiteModelLayer, PALACE_CAMERA, SITE_MODELS } from './siteModels';
 import { LANDMARKS, landmarkPlace } from './landmarks';
+import { journeyPresentation } from './journeyPresentation';
 
 setWorkerUrl(new URL(workerUrl, location.href).href);
 setWorkerCount(1);
@@ -15,8 +16,8 @@ const motionDuration = (milliseconds: number) => matchMedia('(prefers-reduced-mo
 const rasterTiles = ['https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', 'https://b.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png'];
 const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> / <a href="https://www.hotosm.org/" target="_blank" rel="noreferrer">HOT</a> / <a href="https://www.openstreetmap.fr/" target="_blank" rel="noreferrer">OSM France</a>';
 const routeLayers = (): StyleSpecification['layers'] => [
-  { id: 'route-casing', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#fffaf0', 'line-width': 8 } },
-  { id: 'route-rides', type: 'line', source: 'route', filter: ['!=', ['get', 'kind'], 'walk'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': 4.5 } },
+  { id: 'route-casing', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#fffaf0', 'line-width': 9, 'line-offset': ['get', 'offset'] } },
+  { id: 'route-rides', type: 'line', source: 'route', filter: ['!=', ['get', 'kind'], 'walk'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': 5, 'line-offset': ['get', 'offset'] } },
   { id: 'route-walking', type: 'line', source: 'route', filter: ['==', ['get', 'kind'], 'walk'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#6b715d', 'line-width': 3, 'line-dasharray': [1, 2] } },
 ];
 const fallbackStyle = (): StyleSpecification => ({ version: 8, sources: { basemap: { type: 'raster', tiles: rasterTiles, tileSize: 256, maxzoom: 19, attribution } }, layers: [
@@ -150,15 +151,38 @@ export default forwardRef<MapHandle, Props>(function MapCanvas(props, ref) {
       marker.on('dragend', () => { const p = marker.getLngLat(); current.current.onPin(p.lat, p.lng, field); });
       markers.current.push(marker); bounds.push([point.lon, point.lat]);
     }
-    const paths = props.road ? [{ kind: 'road', color: '#284e40', coordinates: props.road.coordinates }] : (props.journey?.legs || []).map(leg => ({ kind: leg.kind, color: leg.kind === 'metro' ? '#355e86' : '#8e3e34', coordinates: leg.coordinates }));
+    const look = props.journey ? journeyPresentation(props.journey) : null;
+    const paths = props.road ? [{ kind: 'road', color: '#284e40', offset: 0, coordinates: props.road.coordinates }] : (props.journey?.legs || []).map(leg => { const style = look?.styles.get(leg); return { kind: leg.kind, color: style?.color || '#6b715d', offset: style ? (style.number - (look!.rides.length + 1) / 2) * 3 : 0, coordinates: leg.coordinates }; });
     const features = paths.map(path => {
       const coordinates = path.coordinates.map(([lat, lon]) => [lon, lat] as [number, number]); bounds.push(...coordinates);
-      return { type: 'Feature' as const, properties: { kind: path.kind, color: path.color }, geometry: { type: 'LineString' as const, coordinates } };
+      return { type: 'Feature' as const, properties: { kind: path.kind, color: path.color, offset: path.offset }, geometry: { type: 'LineString' as const, coordinates } };
     });
     (instance.getSource('route') as GeoJSONSource).setData({ type: 'FeatureCollection', features });
-    for (const leg of props.journey?.legs || []) if (leg.line) for (const point of [leg.from, leg.to]) {
-      const element = document.createElement('span'); element.className = 'map-stop'; element.title = point.name;
-      markers.current.push(new Marker({ element }).setLngLat([point.lon, point.lat]).addTo(instance));
+    const stopGroups = new globalThis.Map<string, { point: Place; actions: { color: string; number: number; title: string; line: string }[] }>();
+    for (const leg of look?.rides || []) for (const [point, action] of [[leg.from, 'boardAt'], [leg.to, 'alightAt']] as const) {
+      const style = look!.styles.get(leg)!, key = `${point.lat.toFixed(6)},${point.lon.toFixed(6)}`, line = t(leg.kind === 'metro' ? 'metroLine' : 'busLine', { code: leg.line!.code });
+      if (!stopGroups.has(key)) stopGroups.set(key, { point, actions: [] });
+      stopGroups.get(key)!.actions.push({ ...style, title: t(action, { place: point.name }), line });
+    }
+    for (const { point, actions } of stopGroups.values()) {
+      const element = document.createElement('button'); element.className = 'map-stop'; element.type = 'button';
+      element.setAttribute('aria-label', actions.map(a => `${a.number} · ${a.line}: ${a.title}`).join('; ')); element.title = element.getAttribute('aria-label')!;
+      const popup = document.createElement('div'); popup.className = 'stop-popup';
+      for (const action of actions) {
+        const dot = document.createElement('span'); dot.style.background = action.color; dot.textContent = String(action.number); element.append(dot);
+        const row = document.createElement('div'), chip = document.createElement('b'), name = document.createElement('strong'); chip.style.color = action.color; chip.textContent = `${action.number} · ${action.line}`; name.textContent = action.title; row.append(chip, name);
+        if (point.address) { const address = document.createElement('small'); address.textContent = point.address; row.append(address); } popup.append(row);
+      }
+      const detail = new Popup({ offset: 18, maxWidth: '280px', closeButton: true }).setDOMContent(popup);
+      detail.on('open', () => {
+        // The floating search/route sheets are siblings of the canvas. Place the
+        // popup on that same plane so its stop name and close control stay usable.
+        const popupElement = detail.getElement();
+        if (popupElement) { instance.getContainer().parentElement?.append(popupElement); popupElement.style.zIndex = '9'; }
+        const close = popupElement?.querySelector<HTMLButtonElement>('.maplibregl-popup-close-button');
+        close?.setAttribute('aria-label', t('close')); close?.focus({ preventScroll: true });
+      });
+      markers.current.push(new Marker({ element }).setLngLat([point.lon, point.lat]).setPopup(detail).addTo(instance));
     }
     const signature = JSON.stringify([props.origin?.lat, props.origin?.lon, props.destination?.lat, props.destination?.lon, props.road?.meters, props.journey?.seconds, props.collapsed]);
     if (bounds.length && signature !== cameraSignature.current) {

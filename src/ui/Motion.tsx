@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 're
 import { animate, hover, press, stagger } from 'motion';
 import { CloudDragon } from './Ornament';
 import { useLocale } from '../i18n';
+import { BRAND } from '../brand';
 export function useButtonMotion(dependency: unknown) {
   useEffect(() => {
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const targets = [...document.querySelectorAll<HTMLButtonElement>('button')];
+    const targets = [...document.querySelectorAll<HTMLButtonElement>('button')].filter(button => !button.closest('.map-canvas'));
     const clearHover = hover(targets, element => {
       if ((element as HTMLButtonElement).disabled) return;
       animate(element, { scale: 1.012 }, { duration: .28, ease: 'easeInOut' });
@@ -88,6 +89,6 @@ export function useCurtain() {
       locked.current = false; setTransitioning(false);
     }
   }
-  const curtains: ReactNode = <div aria-hidden="true"><div className="iris-curtain" ref={iris}><CloudDragon/><span>HIST</span></div><div className="wipe-curtain" ref={wipes}>{Array.from({ length: 5 }, (_, i) => <i key={i}/>)}</div></div>;
+  const curtains: ReactNode = <div aria-hidden="true"><div className="iris-curtain" ref={iris}><CloudDragon/><span className="brand-name" lang="vi">{BRAND}</span></div><div className="wipe-curtain" ref={wipes}>{Array.from({ length: 5 }, (_, i) => <i key={i}/>)}</div></div>;
   return { transition, transitioning, curtains };
 }

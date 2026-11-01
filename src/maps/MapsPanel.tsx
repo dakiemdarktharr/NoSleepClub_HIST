@@ -6,6 +6,8 @@ import { distance } from './geo';
 import MapCanvas, { type MapHandle } from './MapCanvas';
 import { verifyJourney } from './verifyJourney';
 import TransitSteps from './TransitSteps';
+import TransferGuide, { lineStyle } from './TransferGuide';
+import { journeyPresentation } from './journeyPresentation';
 import type { Journey, Place, RoadRoute, TransitSearchOptions, TravelMode } from './types';
 import { useLocale } from '../i18n';
 import DestinationInput from './DestinationInput';
@@ -119,6 +121,7 @@ export default function MapsPanel() {
     finally { if (mounted.current) setBusy(false); }
   }
   const hasRoute = !!road || !!journey;
+  const transitLook = journey ? journeyPresentation(journey) : null;
   const pinProps=(field:Field)=>({field,disabled:busy,active:pickField===field,onPick:()=>{setPickField(pickField===field?null:field);setResults([]);},onDrag:setDrag,onDrop:(x:number,y:number)=>dropPin(x,y,field)});
   return <section className={`maps-panel ${pickField?'is-picking':''} ${drag?'is-dragging':''}`} aria-label={t('mapRegion')}>
     <MapCanvas ref={map} origin={origin} destination={destination} road={road} journey={journey} collapsed={collapsed} pickField={pickField} onPin={pinAt}/>
@@ -140,10 +143,10 @@ export default function MapsPanel() {
       {error&&<p className="map-error" role="alert">{m(error)}</p>}
       {!hasRoute&&!busy&&<p className="map-hint">{t('mapHint')}</p>}
     </section>
-    {hasRoute&&<section className={`route-sheet ${expanded?'is-expanded':''}`} aria-label={t('journey')}><div className="route-summary"><strong>{road?metersText(road.meters):t('estimatedMinutes',{n:Math.max(1,Math.round(journey!.seconds/60))})}</strong><span>{road?t('minutes',{n:Math.max(1,Math.round(road.seconds/60))}):<>{metersText(journey!.meters)}<br/>{t('transfers',{lines:journey!.boardings,changes:Math.max(0,journey!.boardings-1)})}</>}</span></div>
-      <p className="route-description">{t(road?'roadSummary':journey!.optimality==='model'?'fastestEstimate':'bestChecked')}{journey&&<><br/>{t('timeEstimateNotice')}</>}</p>
+    {hasRoute&&<section className={`route-sheet ${expanded?'is-expanded':''} ${transitLook?.transfers.length?'has-transfers':''}`} aria-label={t('journey')}><div className="route-summary"><strong>{road?metersText(road.meters):t('estimatedMinutes',{n:Math.max(1,Math.round(journey!.seconds/60))})}</strong><span>{road?t('minutes',{n:Math.max(1,Math.round(road.seconds/60))}):<>{metersText(journey!.meters)}<br/>{t('transfers',{lines:journey!.boardings,changes:Math.max(0,journey!.boardings-1)})}</>}</span></div>
+      {road&&<p className="route-description">{t('roadSummary')}</p>}
       {road&&<details onToggle={event=>setExpanded(event.currentTarget.open)}><summary>{t('routeSteps')}</summary><ol className="road-instructions">{road.instructions.map((instruction,i)=><li key={i}>{maneuverText(instruction,locale)}{instruction.meters>0&&<small> ({metersText(instruction.meters)})</small>}</li>)}</ol></details>}
-      {journey&&<><div className="route-line-chips">{journey.legs.filter(leg=>leg.line).map((leg,i)=><span className={`line-code ${leg.kind}`} key={i}>{t(leg.kind==='metro'?'metroLine':'busLine',{code:leg.line!.code})}</span>)}</div><button className="journey-expand" aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}>{t(expanded?'collapseJourney':'expandJourney')}</button>{expanded&&<TransitSteps journey={journey} displayPlace={displayPlace}/>}</>}
+      {journey&&<><div className="route-line-chips">{transitLook!.rides.map((leg,i)=><span className={`line-code ${leg.kind}`} key={i} style={lineStyle(transitLook!.styles.get(leg)!.color)}>{transitLook!.styles.get(leg)!.number} · {t(leg.kind==='metro'?'metroLine':'busLine',{code:leg.line!.code})}</span>)}</div><TransferGuide journey={journey} displayPlace={displayPlace}/><p className="route-description">{t(journey.optimality==='model'?'fastestEstimate':'bestChecked')}<br/>{t('timeEstimateNotice')}</p><button className="journey-expand" aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}>{t(expanded?'collapseJourney':'expandJourney')}</button>{expanded&&<TransitSteps journey={journey} displayPlace={displayPlace}/>}</>}
       <p className="route-footnote">{road?t('roadFootnote'):t('transitFootnote',{date:new Intl.DateTimeFormat(locale,{dateStyle:'medium'}).format(new Date(journey!.updatedAt))})}</p>
     </section>}
   </section>;

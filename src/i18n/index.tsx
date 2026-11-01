@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { LOCALES, languageNames, translate, type Locale, type MessageKey, type Params } from './catalog';
 import { localizeMessage } from './runtime';
+import { BRAND } from '../brand';
 const fontLoads = {
   en: () => Promise.resolve(), vi: () => Promise.resolve(),
   ko: () => import('./ko.css'), zh: () => import('./zh.css'),
@@ -20,7 +21,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.lang = languageNames[locale].intl;
     document.documentElement.dataset.locale = locale;
-    document.title = `NoSleepClub · ${translate('city', locale)}`;
+    document.title = `${BRAND} · ${translate('city', locale)}`;
     void fontLoads[locale]();
   }, [locale]);
   const setLocale = (value: Locale) => { update(value); try { localStorage.setItem('hist-locale-v1', value); } catch { /* Private browsing remains usable. */ } };
@@ -33,5 +34,5 @@ export function LanguageChoices({ onChoose }: { onChoose?: () => void }) {
   return <div className="language-choices">{choices.map(value => <button key={value} lang={languageNames[value].intl} className={`language-choice language-${value}`} aria-pressed={locale === value} onClick={() => { setLocale(value); onChoose?.(); }}><span>{languageNames[value].native}</span><small lang="en">{languageNames[value].english}</small><span aria-hidden="true">↗</span></button>)}</div>;
 }
 export function LanguageGate({ onChoose }: { onChoose: () => void }) {
-  return <main className="language-screen"><div className="language-masthead">NoSleepClub <span>Ho Chi Minh City</span></div><section><p className="language-kicker">WELCOME · CHÀO MỪNG · 환영합니다 · 欢迎 · ようこそ · ДОБРО ПОЖАЛОВАТЬ</p><h1>Choose your<br/><em>language.</em></h1><LanguageChoices onChoose={onChoose}/></section><div className="language-rule" aria-hidden="true"/></main>;
+  return <main className="language-screen"><div className="language-masthead"><strong className="brand-name" lang="vi">{BRAND}</strong><span>Ho Chi Minh City</span></div><section><p className="language-kicker">WELCOME · CHÀO MỪNG · 환영합니다 · 欢迎 · ようこそ · ДОБРО ПОЖАЛОВАТЬ</p><h1>Choose your<br/><em>language.</em></h1><LanguageChoices onChoose={onChoose}/></section><div className="language-rule" aria-hidden="true"/></main>;
 }

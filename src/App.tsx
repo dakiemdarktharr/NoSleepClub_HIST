@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { downloadFootage, loadCatalog, rememberRoom, restoreRoom, rpc, saveFootage, shareLink, Vision } from './client';
 import { predictionFreshness, quality, TemporalGate } from './recognition';
@@ -10,6 +10,8 @@ import { LanguageChoices, LanguageGate, useLocale } from './i18n';
 import Modal from './ui/Modal';
 import { CloudDragon, InkLandscape, Lantern } from './ui/Ornament';
 import { ChangingTitle, useButtonMotion, useCurtain } from './ui/Motion';
+import { BRAND, BRAND_FILE } from './brand';
+import { useViewSwipe, type ViewTab } from './ui/useViewSwipe';
 const MapsPanel = lazy(() => import('./maps/MapsPanel'));
 
 type Draft = { blob: Blob; frames: Feature[]; captured: CapturedFrame[]; duration: number; cover: string; savedId?: string };
@@ -48,7 +50,9 @@ export default function App() {
   const [report, setReport] = useState('');
   const [learnedCount, setLearnedCount] = useState(0);
   const [tab, setTab] = useState<'camera' | 'maps'>('camera');
+  const [mapsVisited, setMapsVisited] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const appRoot = useRef<HTMLDivElement>(null);
   const { transition, transitioning, curtains } = useCurtain();
   useButtonMotion(`${mode}:${tab}:${libraryOpen}:${!!draft}:${showQR}:${camera}:${busy}`);
   const video = useRef<HTMLVideoElement>(null);
@@ -150,6 +154,12 @@ export default function App() {
     if (video.current) video.current.srcObject = null;
     setCamera(false); setPrediction(emptyPrediction); setQualityLabel('Camera đã tắt');
   }
+  const changeView = useCallback((next: ViewTab) => {
+    if (mode !== 'user' || next === tab || busy || libraryOpen || showQR || !!draft || transitioning) return;
+    if (next === 'maps') { stopCamera(); setMapsVisited(true); }
+    setTab(next);
+  }, [mode, tab, busy, libraryOpen, showQR, !!draft, transitioning]);
+  useViewSwipe(appRoot, mode === 'user' && !busy && !libraryOpen && !showQR && !draft && !transitioning, changeView);
   useEffect(() => {
     const hidden = () => { if (document.hidden) stopCamera(); };
     document.addEventListener('visibilitychange', hidden);
@@ -173,7 +183,7 @@ export default function App() {
   }, [showQR, link]);
 
   function enter(next: Mode) {
-    setError(''); setTab('camera'); setMode(next);
+    setError(''); setMapsVisited(false); setTab('camera'); setMode(next);
     setStatus(next === 'dev' ? 'Quay một video 5 giây để dạy khu vực.' : 'Mở QR phòng để nạp bộ mẫu.');
     if (room) void refresh(room).then(clips => {
       if (next === 'user') return prewarm(room, clips);
@@ -201,8 +211,11 @@ export default function App() {
       setCamera(true); setQualityLabel('Camera trực tiếp');
       setStatus(mode === 'dev' ? 'Quay 5 giây, rồi đặt tên khu vực.' : 'Đang chuẩn bị nhận diện…');
       if (mode === 'dev') { void ensureVision().catch(fail); return; }
-      await ensureVision();
-      if (mode === 'user' && room && current === cameraGeneration.current) await startRecognition();
+      // Camera permission/playback finishes independently of a cold model download.
+      // A stale preparation must never restart recognition after switching to Maps.
+      void ensureVision().then(async () => {
+        if (room && current === cameraGeneration.current) await startRecognition();
+      }).catch(error => { if (current === cameraGeneration.current) { stopCamera(); fail(error); } });
     } catch (error) {
       stopCamera();
       const named = error as Error;
@@ -366,10 +379,10 @@ export default function App() {
   const visibleStatus = busy || !modelReady ? status : mode === 'dev' ? status : '';
   if (!languageChosen) return <LanguageGate onChoose={() => setLanguageChosen(true)}/>;
   return <>
-    <div className={`app-shell ${mode ? 'in-workspace' : 'at-title'}`}>
+    <div ref={appRoot} className={`app-shell ${mode ? 'in-workspace' : 'at-title'}`}>
       {!mode ? <main className="title-screen">
         <div className="tile-border" aria-hidden="true"/>
-        <div className="title-masthead"><span>NoSleepClub</span><span>{t('city')}</span></div>
+        <div className="title-masthead"><span className="brand-name" lang="vi">{BRAND}</span><span>{t('city')}</span></div>
         <Lantern/>
         <div className="title-center"><CloudDragon className="title-ornament"/><h1><ChangingTitle/></h1>
           <div className="role-choices" aria-label={t('chooseRole')}>
@@ -381,12 +394,14 @@ export default function App() {
         </div>
         <InkLandscape/><div className="title-bottom-rule" aria-hidden="true"/>
       </main> : <>
-        <header className="app-header"><div className="header-start"><button className="icon-button" aria-label={t('backRoles')} disabled={busy || recording || !!draft || transitioning} onClick={() => void leave()}><Icon name="back"/></button><span className="wordmark">HIST</span><span className="role-indicator">{t(mode === 'dev' ? 'dev' : 'user')} <small>{t('test')}</small></span></div>
-          {mode === 'user' && <nav className="view-tabs" aria-label={t('tools')}><button aria-pressed={tab === 'camera'} onClick={() => setTab('camera')}><Icon name="camera"/><span>{t('camera')}</span></button><button aria-pressed={tab === 'maps'} onClick={() => { stopCamera(); setTab('maps'); }}><Icon name="map"/><span>{t('maps')}</span></button></nav>}
+        <header className="app-header"><div className="header-start"><button className="icon-button" aria-label={t('backRoles')} disabled={busy || recording || !!draft || transitioning} onClick={() => void leave()}><Icon name="back"/></button><span className="wordmark brand-name" lang="vi">{BRAND}</span><span className="role-indicator">{t(mode === 'dev' ? 'dev' : 'user')} <small>{t('test')}</small></span></div>
+          {mode === 'user' && <nav className="view-tabs" role="tablist" aria-label={t('tools')} onKeyDown={event => { if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return; event.preventDefault(); const next = event.key === 'Home' ? 'camera' : event.key === 'End' ? 'maps' : tab === 'camera' ? 'maps' : 'camera'; changeView(next); document.getElementById('view-tab-' + next)?.focus(); }}><button id="view-tab-camera" role="tab" aria-selected={tab === 'camera'} aria-controls="view-camera" tabIndex={tab === 'camera' ? 0 : -1} disabled={busy || transitioning} onClick={() => changeView('camera')}><Icon name="camera"/><span>{t('camera')}</span></button><button id="view-tab-maps" role="tab" aria-selected={tab === 'maps'} aria-controls="view-maps" tabIndex={tab === 'maps' ? 0 : -1} disabled={busy || transitioning} onClick={() => changeView('maps')}><Icon name="map"/><span>{t('maps')}</span></button></nav>}
           <button className="icon-button library-toggle" aria-label={t('tools')} disabled={recording || busy || !!draft} onClick={() => setLibraryOpen(true)}><Icon name="menu"/></button>
         </header>
+        {mode === 'user' && <div className="view-swipe-rail" data-swipe-zone="views"><span aria-hidden="true">↔</span><span>{t('swipeViews')}</span></div>}
         <main className="workspace-main">
-          <section className="camera-panel" hidden={tab !== 'camera'} aria-label={t('cameraRegion')}>
+          <div className="view-stack" data-active-view={tab}>
+          <section id="view-camera" className={`camera-panel workspace-view ${tab === 'camera' ? 'is-active' : 'before-active'}`} inert={tab !== 'camera'} aria-hidden={tab !== 'camera'} role={mode === 'user' ? 'tabpanel' : undefined} aria-labelledby={mode === 'user' ? 'view-tab-camera' : undefined} aria-label={t('cameraRegion')}>
             <div ref={viewfinder} className={`viewfinder ${recording ? 'recording' : ''}`}>
               <video ref={video} autoPlay muted playsInline hidden={!camera}/>
               {!camera && <div className="camera-placeholder"><CloudDragon className="placeholder-ornament"/><h1>{mode === 'dev' ? t('captureTitle') : t('recognizeTitle')}</h1><p>{mode === 'dev' ? t('fiveSecondHint') : room ? t('learnedPlaces', {n: learnedCount || labels.size}) : t('joinHint')}</p><button className="primary camera-start" disabled={busy} onClick={() => void openCamera()}><Icon name="camera"/>{t('startCamera')}</button></div>}
@@ -396,7 +411,8 @@ export default function App() {
             </div>
             <div className="camera-status"><span className="quality-label"><i className={modelReady ? 'ready' : ''}/>{!modelReady ? m(status) : camera ? m(qualityLabel) : t('modelReady')}</span>{visibleStatus && <span className="process-status" role="status">{busy && <i className="spinner"/>}{m(visibleStatus)}</span>}</div>
           </section>
-          {mode === 'user' && tab === 'maps' && <Suspense fallback={<div className="map-loading" role="status">{t('openingMaps')}</div>}><MapsPanel/></Suspense>}
+          {mode === 'user' && <section id="view-maps" className={`map-view workspace-view ${tab === 'maps' ? 'is-active' : 'after-active'}`} inert={tab !== 'maps'} aria-hidden={tab !== 'maps'} role="tabpanel" aria-labelledby="view-tab-maps">{mapsVisited && <Suspense fallback={<div className="map-loading" role="status">{t('openingMaps')}</div>}><MapsPanel/></Suspense>}</section>}
+          </div>
           {error && <div className="error-toast" role="alert"><span>{m(error)}</span><button className="icon-button" aria-label={t('closeError')} onClick={() => setError('')}><Icon name="close"/></button></div>}
         </main>
       </>}
@@ -422,7 +438,7 @@ export default function App() {
       <div className="modal-actions"><button disabled={busy} onClick={() => saveBlob(draft.blob, `footage.${draft.blob.type.includes('mp4') ? 'mp4' : 'webm'}`)}>{t('downloadVideo')}</button><button disabled={busy} onClick={() => { setDraft(null); setError(''); }}>{draft.savedId ? t('close') : t('discardVideo')}</button></div>
       {busy && <p className="training-status" role="status">{m(status)}</p>}{error && <p className="warning" role="alert">{m(error)}</p>}
     </Modal>}
-    {showQR && <Modal title={room ? t('shareReferences') : t('openApp')} onClose={() => setShowQR(false)}><p>{t('qrHint')}</p>{qrImage && <img className="qr-image" src={qrImage} alt={t('qrAlt')}/>}<input aria-label={t('roomLink')} readOnly value={link} onFocus={event => event.currentTarget.select()}/><div className="qr-actions"><button disabled={!navigator.clipboard} onClick={() => { navigator.clipboard?.writeText(link).then(() => setLinkCopied(true)).catch(fail); }}>{t('copyLink')}</button><button disabled={!qrImage} onClick={() => { const a = document.createElement('a'); a.href = qrImage; a.download = 'HIST-QR.png'; a.click(); }}>{t('downloadQR')}</button></div>{linkCopied && <p role="status">{m('Đã sao chép link.')}</p>}{error && <p className="warning" role="alert">{m(error)}</p>}</Modal>}
+    {showQR && <Modal title={room ? t('shareReferences') : t('openApp')} onClose={() => setShowQR(false)}><p>{t('qrHint')}</p>{qrImage && <img className="qr-image" src={qrImage} alt={t('qrAlt')}/>}<input aria-label={t('roomLink')} readOnly value={link} onFocus={event => event.currentTarget.select()}/><div className="qr-actions"><button disabled={!navigator.clipboard} onClick={() => { navigator.clipboard?.writeText(link).then(() => setLinkCopied(true)).catch(fail); }}>{t('copyLink')}</button><button disabled={!qrImage} onClick={() => { const a = document.createElement('a'); a.href = qrImage; a.download = BRAND_FILE + '-QR.png'; a.click(); }}>{t('downloadQR')}</button></div>{linkCopied && <p role="status">{m('Đã sao chép link.')}</p>}{error && <p className="warning" role="alert">{m(error)}</p>}</Modal>}
     {curtains}
   </>;
 }

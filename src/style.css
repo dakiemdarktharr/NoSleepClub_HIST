@@ -151,6 +151,51 @@ html[data-locale=ko] h1,html[data-locale=zh] h1,html[data-locale=ja] h1{letter-s
 .map-pin{position:absolute;display:grid!important;place-items:center;padding:0;min-height:44px;border:0;background:transparent;line-height:1;touch-action:none}
 .map-pin:before{z-index:-1}.map-pin:hover{background:transparent}
 .map-stop{width:10px;height:10px;background:var(--paper-light);border:2px solid var(--ink);border-radius:50%}
+
+/* Nếp Phố: original cement-tile repeat, quiet at the reading surface. */
+.brand-name{font-family:'Noto Serif Variable',serif;font-weight:800;white-space:nowrap;font-stretch:normal;letter-spacing:-.045em}
+.title-screen,.language-screen{background-image:linear-gradient(90deg,#ede5d3ba,#ede5d3f4 27%,#ede5d3f4 73%,#ede5d3ba),url('/art/indochine-tiles.svg');background-size:auto,160px 160px}
+.title-masthead{display:flex;justify-content:space-between;gap:18px}.title-masthead .brand-name,.language-masthead .brand-name{font-size:29px;line-height:1.25}
+.title-masthead>span:last-child{font:500 12px/1.5 var(--body);letter-spacing:0;max-width:60%}
+.tile-border{background-image:url('/art/indochine-tiles.svg');background-size:40px 40px;background-color:transparent;opacity:.8}
+.in-workspace{background-image:linear-gradient(#ede5d3d9,#ede5d3d9),url('/art/indochine-tiles.svg');background-size:auto,120px 120px}
+.app-header{background:var(--paper)}.wordmark.brand-name{font-size:30px;line-height:1.25}
+.view-tabs button[aria-selected=true]{background:var(--ink);color:var(--paper-light)}
+.view-stack{position:relative;flex:1;min-height:0;min-width:0}
+.workspace-view{position:absolute;inset:0;display:flex;flex-direction:column;min-height:0;min-width:0;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .42s cubic-bezier(.22,.61,.36,1),transform .42s cubic-bezier(.22,.61,.36,1),visibility 0s .42s}
+.workspace-view.before-active{transform:translateX(-16px)}.workspace-view.after-active{transform:translateX(16px)}
+.workspace-view.is-active{opacity:1;visibility:visible;transform:translateX(0);pointer-events:auto;transition-delay:0s}
+.view-swipe-rail{display:none;flex-shrink:0;touch-action:pan-y;user-select:none;gap:8px;align-items:center;justify-content:center;min-height:27px;border-bottom:1px solid #b8b6a166;font-size:11px;line-height:1.4;color:var(--muted);background:#ede5d3e8}
+.view-swipe-rail>span:first-child{font-size:18px;color:var(--ink)}
+.camera-panel{touch-action:pan-y}
+/* Every bus/metro leg keeps the same ink in its track, chip and stop marker. */
+.line-code,.line-code.metro{background:var(--route-color,var(--ink))}
+.transit-steps>li.ride-leg{border-left:3px solid var(--route-color);padding-left:21px}
+.transit-steps>li.ride-leg:before{left:-5px;background:var(--route-color)}
+.ride-stops{margin:4px 0 10px}.ride-stops>div{padding:8px 10px;border-left:1px solid var(--line)}
+.ride-stops dt{font-size:11px;color:var(--muted);margin-bottom:3px}.ride-stops dd{margin:0}
+.ride-stops strong{font-size:15px;line-height:1.5;overflow-wrap:anywhere;font-weight:700}
+.ride-stops .alight-stop{border-left:3px solid var(--route-color);background:#e8dfcc75;margin-top:6px}
+.transfer-guide{margin-top:14px;display:grid;gap:12px}.transfer-card{border-block:1px solid var(--line);padding:12px 0}
+.transfer-card h3{font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:12px;color:var(--ink)}
+.transfer-stop{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding-left:9px;border-left:3px solid var(--route-color)}
+.transfer-stop .line-code{font-size:11px;max-width:104px;white-space:normal;margin:0}
+.transfer-stop>div{min-width:0}.transfer-stop>div>span{display:block;color:var(--muted);font-size:11px;line-height:1.5}
+.transfer-stop strong{display:block;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.transfer-stop small{display:block;font-size:11px;line-height:1.6;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}
+.transfer-connection{margin:9px 0 9px 13px;padding-left:12px;border-left:1px dashed var(--muted);font-size:11px;line-height:1.7}
+.map-stop{width:auto;height:44px;min-width:44px;display:flex;align-items:center;justify-content:center;gap:2px;border:0;background:transparent;border-radius:0;padding:8px;box-shadow:none}
+.map-stop>span{display:grid;place-items:center;min-width:25px;height:25px;padding:0 4px;border:2px solid var(--paper-light);border-radius:50%;font:700 11px/1 var(--body);color:white;box-shadow:0 1px 4px #0004}
+.map-stop:hover{background:transparent}.maplibregl-popup-content{background:var(--paper-light);color:var(--ink);padding:20px 28px 16px 16px;border:1px solid var(--line);border-radius:0}
+.stop-popup{font:12px/1.5 var(--body);min-width:120px}.stop-popup>div+div{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.stop-popup b,.stop-popup strong,.stop-popup small{display:block;overflow-wrap:anywhere}.stop-popup strong{font-size:14px;margin:4px 0}.stop-popup small{color:var(--muted);font-size:11px}
+.maplibregl-popup-close-button{width:36px;height:36px;font-size:22px;color:var(--ink)}
+@media(pointer:coarse){.view-swipe-rail{display:flex}}
+@media(max-width:760px){.view-swipe-rail{display:flex}.wordmark.brand-name{font-size:27px}.title-masthead .brand-name{font-size:25px}.transfer-stop{grid-template-columns:minmax(70px,auto) 1fr}}
+@media(max-width:390px){.wordmark.brand-name{font-size:22px}.header-start{gap:4px}.title-masthead .brand-name{font-size:22px}.title-masthead{gap:12px}.title-masthead>span:last-child{font-size:10px}}
+@media(prefers-reduced-motion:reduce){.workspace-view{transition:none;transform:none!important}}
+.view-swipe-rail{color:#415448}
+@media(max-width:760px){.route-sheet.has-transfers:not(.is-expanded){max-height:48%}}
 .map-search-sheet,.route-sheet{overscroll-behavior:contain;scrollbar-color:var(--brass) var(--paper)}
 .pin-address-status{font-size:10px;line-height:1.6;color:var(--muted);margin:6px 0 3px}
 @media(max-width:760px){

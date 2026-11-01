@@ -1,9 +1,11 @@
-# NoSleepClub HIST
+# Nếp Phố
 
 A mobile web proof of concept with two features:
 
 * **Place recognition:** Dev records and names a five-second clip. User points a camera at that place; the app displays its name when visual evidence is sufficient, or `...` when it is not.
 * **Ho Chi Minh City maps:** users choose two points and request walking, motorbike or bus/metro directions inside the app.
+
+The UI brand is **Nếp Phố**. The existing GitHub repository, Vercel URL, room capabilities and browser storage keys keep their technical identifiers so saved recordings, QR links and models continue to work.
 
 [Open the HTTPS app](https://nosleepclub-hist-connected.vercel.app/) · [App QR](docs/qr-app.png) · [UI audit](docs/audit-localization.md) · [Translation review](docs/translation-review.md)
 
@@ -201,6 +203,8 @@ flowchart LR
 
 Users can search explicitly with the magnifier/Enter, type `latitude,longitude`, choose one of ten curated destinations, or place A/B pins. Pin controls support drag-and-drop and tap-then-place; existing markers are draggable. Editing an endpoint invalidates the previous route and any pending result. Geolocation permission is requested only by **My location**.
 
+Bus/metro rides use a shared presentation model in `journeyPresentation.ts`: a numbered leg and service colour appear on the track, legend, stop marker and instructions. Transfer summaries put the alighting stop/address, connecting walk (or same-stop change), next boarding stop/address and next service direction near the top of the route sheet, even when detailed steps are collapsed. Stop markers open localized text popups. Colours distinguish services in the current journey; route numbers and stop names remain visible alongside colour. Search costs and the routing algorithm are unchanged.
+
 The renderer is [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/API/classes/Map/), loaded with the map panel. The primary [OpenFreeMap Positron style](https://openfreemap.org/quick_start/) uses vector streets and local ink/paper background and water colors; HOT raster tiles are the fallback. Maps opens over Independence Palace at zoom 17.25 (17.1 on shorter phones) with a true 52° pitch, facing its main facade and framing it clear of the search panel. **2D/3D** switches pitch, the compass resets north, and zoom buttons/pinch control zoom (up to 20). Wheel zoom is disabled to avoid accidental zoom while scrolling. Camera interactions and pin screen positions use MapLibre projection/unprojection, not a CSS perspective transform. Route geometry remains `[latitude, longitude]` in application types and is converted to GeoJSON `[longitude, latitude]` at the renderer boundary.
 
 A dropped or dragged pin calls `maps.reverse`, a cached, region-bounded Photon reverse lookup. The input displays the nearby street address while the **exact selected coordinates remain the routing endpoint**. Provider results more than 250 m away and city-only results are rejected. Until resolution, or on failure, coordinates are shown instead of a fabricated address. Unique pin IDs prevent an older response from replacing a later pin; endpoint swaps retain the identity of a pending lookup. The interface labels these as nearby addresses, not exact surveyed entrances.
@@ -271,6 +275,10 @@ All typefaces are self-hosted. CJK font CSS is registered at entry so native lan
 
 The paper/ink interface uses a serif newspaper type hierarchy with condensed heavy headlines and quieter reading text. The [editable SVG dragon](public/art/dragon.svg) restores the user's own drawing from commit `a4ba34b`. The other [native SVG ornaments](public/art/README.md)—lantern, river pavilion and lotus compass—follow the Canva concept. The connector produced raster concept art; these SVGs are manually redrawn paths, not Canva SVG exports. Camera occupies most of the workspace; library, QR and evaluation use a focus-trapped drawer. Mobile inputs are at least 16 px and main controls target 44 px. Reduced motion bypasses the animated curtains/typewriter. See the linked audits for tested viewports and the limits of synthetic camera tests.
 
+The original [Indochine tile repeat](public/art/indochine-tiles.svg) sits on the surrounding paper, not over camera images, map labels or route cards. **Nếp Phố** is a proper name and keeps the Vietnamese-capable serif face in every interface language.
+
+User can swipe left over the camera to open Maps, or swipe the dedicated Camera ↔ Maps rail in either direction. The rail keeps native map pan/pinch separate from navigation. Ordinary buttons and arrow/Home/End keyboard navigation remain available. Camera/Maps crossfade with a short horizontal offset over 420 ms; reduced motion switches immediately. Maps mounts lazily on first visit and remains mounted while Camera is shown, preserving endpoints, route and viewport. Inactive panels are inert and hidden from assistive technology. Switching to Maps stops camera tracks; returning does not request permission or resume video automatically. Cold vision-model preparation no longer holds the view navigation busy.
+
 ## Deployment and troubleshooting
 
 GitHub `main` is connected to Vercel project `nosleepclub-hist`. Builds output `dist`; functions run in `sin1` with a 30-second limit. GitHub Actions runs frontend and NodeNext server typechecks, tests, build and dependency audit. Verify CI and the production alias against the same commit, then exercise the database-backed API and capture/train flow. A READY deployment or an HTTP 200 for the HTML shell alone does not establish that those workflows work.
@@ -297,3 +305,5 @@ CSP limits scripts/fonts to self and allows the model-delivery and selected map 
 The [typography and map audit](docs/audit-map-redesign.md) covers font glyph rendering, pin-address races, pitched-map interactions, provider failure and graphics-context recovery. Historical audits describe the versions they tested. Current behavior is defined by the code; synthetic tests do not establish real-world recognition accuracy or current transit operation.
 
 The [mobile interaction audit](docs/audit-mobile-interactions.md) records the Dev entry repair, server ESM import failure, restored sketch and interaction test coverage.
+
+The [Nếp Phố interaction audit](docs/audit-nep-pho-interactions.md) covers the new branding/tile repeat, transfer instructions and colour consistency, swipe/tab navigation, camera preparation and retained map state.
