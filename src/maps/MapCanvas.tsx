@@ -5,6 +5,8 @@ import { useLocale } from '../i18n';
 import { CompassSeal } from '../ui/Ornament';
 import type { Field } from './PinButton';
 import type { Journey, Place, RoadRoute } from './types';
+import { attachSiteModel, createSiteModelLayer, PALACE_CAMERA, SITE_MODELS } from './siteModels';
+import { LANDMARKS, landmarkPlace } from './landmarks';
 
 setWorkerUrl(new URL(workerUrl, location.href).href);
 setWorkerCount(1);
@@ -27,7 +29,7 @@ type Props = { origin: Place | null; destination: Place | null; road: RoadRoute 
 export default forwardRef<MapHandle, Props>(function MapCanvas(props, ref) {
   const { t, locale } = useLocale(), container = useRef<HTMLDivElement>(null), map = useRef<Map | null>(null);
   const current = useRef(props); current.current = props;
-  const [epoch, setEpoch] = useState(0), [styleEpoch, setStyleEpoch] = useState(0), [loaded, setLoaded] = useState(false), [tilted, setTilted] = useState(true), [bearing, setBearing] = useState(-12);
+  const [epoch, setEpoch] = useState(0), [styleEpoch, setStyleEpoch] = useState(0), [loaded, setLoaded] = useState(false), [tilted, setTilted] = useState(true), [bearing, setBearing] = useState(PALACE_CAMERA.bearing);
   const [health, setHealth] = useState<'loading' | 'ready' | 'recovering' | 'failed' | 'unsupported'>('loading');
   const markers = useRef<Marker[]>([]), cameraSignature = useRef(''), healthRef = useRef(health); healthRef.current = health;
   useImperativeHandle(ref, () => ({ unprojectScreen(x, y) {
@@ -36,12 +38,12 @@ export default forwardRef<MapHandle, Props>(function MapCanvas(props, ref) {
     const point = instance.unproject([x - bounds.left, y - bounds.top]); return { lat: point.lat, lon: point.lng };
   } }), []);
   useEffect(() => {
-    let instance: Map, alive = true, fallback = false, retries = 0, retryScheduled = false, hadTileError = false, hasBaseContent = false, recoveryExhausted = false;
+    let instance: Map, alive = true, fallback = false, retries = 0, retryScheduled = false, hadTileError = false, hasBaseContent = false, recoveryExhausted = false, initialFramed = false;
     const timers = new Set<ReturnType<typeof setTimeout>>();
     const later = (fn: () => void, ms: number) => { const timer = setTimeout(() => { timers.delete(timer); if (alive) fn(); }, ms); timers.add(timer); return timer; };
     setLoaded(false); setHealth('loading'); cameraSignature.current = '';
     try {
-      instance = new Map({ container: container.current!, style: vectorStyle, center: [106.702, 10.778], zoom: 14, pitch: 42, bearing: -12, maxPitch: 60, maxZoom: 19, renderWorldCopies: false, attributionControl: { compact: true }, scrollZoom: false, canvasContextAttributes: { antialias: true }, transformRequest: url => ({ url, referrerPolicy: 'strict-origin-when-cross-origin' }) });
+      instance = new Map({ container: container.current!, style: vectorStyle, ...PALACE_CAMERA, maxPitch: 60, maxZoom: 20, renderWorldCopies: false, attributionControl: { compact: true }, scrollZoom: false, canvasContextAttributes: { antialias: true }, transformRequest: url => ({ url, referrerPolicy: 'strict-origin-when-cross-origin' }) });
     } catch { setHealth('unsupported'); return; }
     map.current = instance; setTilted(true);
     // Pins and camera controls must work even while an upstream tile request is stalled.
@@ -54,6 +56,23 @@ export default forwardRef<MapHandle, Props>(function MapCanvas(props, ref) {
       for (const layer of instance.getStyle().layers) {
         if (layer.type === 'background') instance.setPaintProperty(layer.id, 'background-color', '#e8e5d9');
         else if (layer.type === 'fill' && /water/.test(layer.id)) instance.setPaintProperty(layer.id, 'fill-color', '#bbcfc6');
+      }
+      attachSiteModel(instance, createSiteModelLayer(stats => {
+        if (!alive || !container.current) return;
+        const data = container.current.dataset;
+        data.siteModels = stats.state; data.modelsLoaded = String(stats.loaded); data.modelsDrawn = String(stats.drawn); data.modelTriangles = String(stats.triangles);
+      }));
+      if (instance.getStyle().glyphs) {
+        instance.addSource('hist-site-labels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        instance.addLayer({ id: 'hist-site-labels', type: 'symbol', source: 'hist-site-labels', minzoom: 14.8, layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'], 'text-size': 12, 'text-anchor': 'top', 'text-offset': [0, 1.1], 'text-max-width': 18 }, paint: { 'text-color': '#37433d', 'text-halo-color': '#f3efe3', 'text-halo-width': 2 } });
+      }
+      if (!initialFramed) {
+        initialFramed = true;
+        const element = container.current!, mobile = element.clientWidth <= 760;
+        const sheet = element.parentElement?.querySelector('.map-search-sheet');
+        const top = Math.min(element.clientHeight * .46, (sheet?.getBoundingClientRect().height || 280) + 24);
+        const shortPhone = mobile && element.clientHeight < 720;
+        instance.easeTo({ ...PALACE_CAMERA, zoom: shortPhone ? 17.1 : PALACE_CAMERA.zoom, offset: [mobile ? 0 : 180, mobile ? top / 2 - (shortPhone ? 20 : 0) : 0], duration: 0 });
       }
       setLoaded(true); setStyleEpoch(value => value + 1);
     });
@@ -112,6 +131,15 @@ export default forwardRef<MapHandle, Props>(function MapCanvas(props, ref) {
     };
   }, [epoch]);
   useEffect(() => {
+    const source = map.current?.getSource('hist-site-labels') as GeoJSONSource | undefined;
+    if (!loaded || !source) return;
+    source.setData({ type: 'FeatureCollection', features: SITE_MODELS.map(site => {
+      const landmark = LANDMARKS.find(item => item.id === site.id)!, angle = site.frontBearing * Math.PI / 180;
+      const front = site.dimensionsMeters[1] / 2;
+      return { type: 'Feature', properties: { name: landmarkPlace(landmark, locale).name }, geometry: { type: 'Point', coordinates: [site.center[0] + Math.sin(angle) * front / (111319.49 * Math.cos(site.center[1] * Math.PI / 180)), site.center[1] + Math.cos(angle) * front / 111319.49] } };
+    }) });
+  }, [locale, loaded, styleEpoch]);
+  useEffect(() => {
     const instance = map.current; if (!instance || !loaded) return;
     markers.current.forEach(marker => marker.remove()); markers.current = [];
     const bounds: [number, number][] = [];
@@ -147,7 +175,7 @@ export default forwardRef<MapHandle, Props>(function MapCanvas(props, ref) {
   return <>
     <div className="map-canvas" ref={container} role="region" aria-label={t('cityMap')} data-map-health={health}/>
     <div className="map-view-controls">
-      <button className="map-perspective" disabled={!loaded} onClick={() => map.current?.easeTo({ pitch: tilted ? 0 : 42, duration: motionDuration(650) })} aria-label={t(tilted ? 'flatMap' : 'tiltedMap')}>{tilted ? '2D' : '3D'}</button>
+      <button className="map-perspective" disabled={!loaded} onClick={() => map.current?.easeTo({ pitch: tilted ? 0 : PALACE_CAMERA.pitch, duration: motionDuration(650) })} aria-label={t(tilted ? 'flatMap' : 'tiltedMap')}>{tilted ? '2D' : '3D'}</button>
       <button className="map-north" disabled={!loaded} aria-label={t('resetNorth')} onClick={() => map.current?.easeTo({ bearing: 0, duration: motionDuration(550) })}><span style={{transform:`rotate(${-bearing}deg)`}}><CompassSeal/></span></button>
       <button disabled={!loaded} aria-label={t('zoomIn')} onClick={() => map.current?.zoomIn({ duration: motionDuration(300) })}>+</button>
       <button disabled={!loaded} aria-label={t('zoomOut')} onClick={() => map.current?.zoomOut({ duration: motionDuration(300) })}>−</button>

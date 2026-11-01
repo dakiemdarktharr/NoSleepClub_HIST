@@ -1,0 +1,252 @@
+[
+  {
+    "id": "W39598493",
+    "slug": "palace",
+    "center": [
+      106.69531178,
+      10.77693567
+    ],
+    "frontBearing": 43,
+    "dimensionsMeters": [
+      86.1,
+      76.8,
+      26
+    ],
+    "minZoom": 14.8,
+    "near": {
+      "url": "/models/sites/palace-near-c56470973a69.glb",
+      "bytes": 124856,
+      "triangles": 2292
+    },
+    "far": {
+      "url": "/models/sites/palace-far-b6d583c93e98.glb",
+      "bytes": 12744,
+      "triangles": 216
+    }
+  },
+  {
+    "id": "N5922616581",
+    "slug": "cu-chi",
+    "center": [
+      106.4630985,
+      11.1428861
+    ],
+    "frontBearing": 0,
+    "dimensionsMeters": [
+      1.4,
+      2.2,
+      1.2
+    ],
+    "minZoom": 18,
+    "near": {
+      "url": "/models/sites/cu-chi-near-5c3517f79365.glb",
+      "bytes": 6276,
+      "triangles": 96
+    },
+    "far": {
+      "url": "/models/sites/cu-chi-far-ac84fcf22233.glb",
+      "bytes": 4328,
+      "triangles": 60
+    }
+  },
+  {
+    "id": "N3812282642",
+    "slug": "memorial",
+    "center": [
+      106.6866162,
+      10.774988
+    ],
+    "frontBearing": 43,
+    "dimensionsMeters": [
+      13,
+      9,
+      6.8
+    ],
+    "minZoom": 16,
+    "near": {
+      "url": "/models/sites/memorial-near-d9b7455f6917.glb",
+      "bytes": 37264,
+      "triangles": 660
+    },
+    "far": {
+      "url": "/models/sites/memorial-far-a6aca4d0e6b2.glb",
+      "bytes": 28140,
+      "triangles": 484
+    }
+  },
+  {
+    "id": "W808033616",
+    "slug": "wharf",
+    "center": [
+      106.70680672,
+      10.76825015
+    ],
+    "frontBearing": 334.7,
+    "dimensionsMeters": [
+      34.6,
+      27.8,
+      15
+    ],
+    "minZoom": 14.8,
+    "near": {
+      "url": "/models/sites/wharf-near-7e8f582c91d7.glb",
+      "bytes": 94292,
+      "triangles": 1982
+    },
+    "far": {
+      "url": "/models/sites/wharf-far-d5183b1a5e35.glb",
+      "bytes": 19332,
+      "triangles": 338
+    }
+  },
+  {
+    "id": "W186249226",
+    "slug": "war-museum",
+    "center": [
+      106.69203255,
+      10.77948522
+    ],
+    "frontBearing": 133,
+    "dimensionsMeters": [
+      42.0,
+      58.4,
+      19
+    ],
+    "minZoom": 14.8,
+    "near": {
+      "url": "/models/sites/war-museum-near-360b6d85200f.glb",
+      "bytes": 21868,
+      "triangles": 396
+    },
+    "far": {
+      "url": "/models/sites/war-museum-far-4453d55088ef.glb",
+      "bytes": 9476,
+      "triangles": 156
+    }
+  },
+  {
+    "id": "W802105071",
+    "slug": "city-museum",
+    "center": [
+      106.69966923,
+      10.77592757
+    ],
+    "frontBearing": 131.5,
+    "dimensionsMeters": [
+      68.5,
+      36.9,
+      21
+    ],
+    "minZoom": 14.8,
+    "near": {
+      "url": "/models/sites/city-museum-near-b5c69013472b.glb",
+      "bytes": 121700,
+      "triangles": 2200
+    },
+    "far": {
+      "url": "/models/sites/city-museum-far-cdbce3b7f345.glb",
+      "bytes": 21032,
+      "triangles": 400
+    }
+  },
+  {
+    "id": "W1497050780",
+    "slug": "temple",
+    "center": [
+      106.661188,
+      10.753486
+    ],
+    "frontBearing": 183.3,
+    "dimensionsMeters": [
+      27.5,
+      60.5,
+      11.5
+    ],
+    "minZoom": 14.8,
+    "near": {
+      "url": "/models/sites/temple-near-581608768048.glb",
+      "bytes": 24820,
+      "triangles": 412
+    },
+    "far": {
+      "url": "/models/sites/temple-far-61f2098db1d9.glb",
+      "bytes": 9728,
+      "triangles": 154
+    }
+  },
+  {
+    "id": "N11774744262",
+    "slug": "cathedral",
+    "center": [
+      106.69901893,
+      10.77980332
+    ],
+    "frontBearing": 135,
+    "dimensionsMeters": [
+      34.0,
+      89.2,
+      60.5
+    ],
+    "minZoom": 14.8,
+    "near": {
+      "url": "/models/sites/cathedral-near-02e081d43bb7.glb",
+      "bytes": 56780,
+      "triangles": 1142
+    },
+    "far": {
+      "url": "/models/sites/cathedral-far-5c2705b4640d.glb",
+      "bytes": 14220,
+      "triangles": 242
+    }
+  },
+  {
+    "id": "W39514793",
+    "slug": "post-office",
+    "center": [
+      106.70004827,
+      10.78001417
+    ],
+    "frontBearing": 222.3,
+    "dimensionsMeters": [
+      70.0,
+      61.0,
+      19
+    ],
+    "minZoom": 14.8,
+    "near": {
+      "url": "/models/sites/post-office-near-b9fb0ecf20ad.glb",
+      "bytes": 96656,
+      "triangles": 1848
+    },
+    "far": {
+      "url": "/models/sites/post-office-far-645ceada33ad.glb",
+      "bytes": 7652,
+      "triangles": 120
+    }
+  },
+  {
+    "id": "W39514795",
+    "slug": "market",
+    "center": [
+      106.69801414,
+      10.77256458
+    ],
+    "frontBearing": 149.4,
+    "dimensionsMeters": [
+      99.2,
+      138.6,
+      27
+    ],
+    "minZoom": 14.8,
+    "near": {
+      "url": "/models/sites/market-near-f0edb34cdcba.glb",
+      "bytes": 91280,
+      "triangles": 1952
+    },
+    "far": {
+      "url": "/models/sites/market-far-5800d848f9c2.glb",
+      "bytes": 11660,
+      "triangles": 204
+    }
+  }
+]

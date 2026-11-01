@@ -9,6 +9,7 @@ test-results/
 coverage/
 *.log
 *.tsbuildinfo
+*.blend[1-9]
 captures/
 public/ort/
 .npm-cache/
