@@ -16,6 +16,7 @@ export const featureSchema = z.object({
   if (frame.points.some(([x, y]) => x > frame.width || y > frame.height)) ctx.addIssue({ code: 'custom', message: 'Invalid keypoint position' });
 });
 export const createFootageSchema = z.object({
+  siteId: z.enum(['post-office', 'cathedral', 'palace']).optional(),
   label: z.string().trim().min(1).max(80).transform(value => value.normalize('NFC')),
   background: z.boolean(), kind: z.enum(['reference', 'validation']),
   duration: z.number().finite().min(0).max(86400), size: z.number().int().positive().max(MAX_VIDEO_BYTES),

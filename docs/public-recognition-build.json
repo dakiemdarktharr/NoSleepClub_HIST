@@ -1,0 +1,32 @@
+{
+  "generatedAt": "2026-11-05T02:08:32.918Z",
+  "samples": 9,
+  "independentPhotos": 3,
+  "method": "One licensed photo per site with three nested crops. Self-source regression only, not independent field accuracy.",
+  "featureModel": "dinov2-small-q8-orb-v1",
+  "version": "fewshot-dinov2-v3",
+  "checks": [
+    {
+      "site": "post-office",
+      "label": "tour:post-office",
+      "inliers": 250,
+      "latencyMs": 222
+    },
+    {
+      "site": "cathedral",
+      "label": "tour:cathedral",
+      "inliers": 250,
+      "latencyMs": 210
+    },
+    {
+      "site": "palace",
+      "label": "tour:palace",
+      "inliers": 250,
+      "latencyMs": 219
+    }
+  ],
+  "unknown": {
+    "label": null,
+    "reason": "Ảnh mờ hoặc quá ít chi tiết"
+  }
+}

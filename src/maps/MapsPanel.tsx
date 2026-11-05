@@ -14,11 +14,14 @@ import DestinationInput from './DestinationInput';
 import PinButton, { type Field } from './PinButton';
 import { maneuverText } from './maneuvers';
 import { LANDMARKS, landmarkPlace } from './landmarks';
+import { tourText, type TourCopyKey } from '../tour/copy';
+export type TourRouteRequest = { id: number; origin: Place | null; destination: Place };
 const modes = [{ id: 'walk', text: 'walk', icon: 'walk' }, { id: 'motorbike', text: 'motorbike', icon: 'bike' }, { id: 'transit', text: 'publicTransport', icon: 'transit' }] as const;
 const metersText = (meters: number) => meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters)} m`;
 const inside = (point: Place) => point.lat >= 10.25 && point.lat <= 11.4 && point.lon >= 106.15 && point.lon <= 107.4;
-export default function MapsPanel() {
+export default function MapsPanel({ tourRequest }: { tourRequest?: TourRouteRequest | null } = {}) {
   const {t,m,locale}=useLocale();
+  const [tourContext, setTourContext] = useState<TourCopyKey | null>(null);
   const [pickField,setPickField]=useState<Field|null>(null),[drag,setDrag]=useState<{x:number;y:number;field:Field}|null>(null);
   const [origin, setOrigin] = useState<Place | null>(null), [destination, setDestination] = useState<Place | null>(null);
   const [originText, setOriginText] = useState(''), [destinationText, setDestinationText] = useState('');
@@ -43,6 +46,15 @@ export default function MapsPanel() {
     mounted.current = true;
     return () => { mounted.current = false; generation.current++; worker.current?.terminate(); pending.current.forEach(item => { clearTimeout(item.timer); item.reject(new Error('Đã đóng bản đồ.')); }); pending.current.clear(); };
   }, []);
+  useEffect(() => {
+    if (!tourRequest) return;
+    invalidate(); setBusy(false); setMode('walk'); setCollapsed(false);
+    points.current = { origin: tourRequest.origin, destination: tourRequest.destination };
+    setOrigin(tourRequest.origin); setDestination(tourRequest.destination);
+    setOriginText(tourRequest.origin?.name || ''); setDestinationText(tourRequest.destination.name);
+    setTourContext(tourRequest.origin ? 'mapFrom' : 'mapFirst');
+    if (tourRequest.origin) void plan('walk', { origin: tourRequest.origin, destination: tourRequest.destination });
+  }, [tourRequest?.id]);
   function pinAt(lat: number, lon: number, field: Field) {
     const coordinate = lat.toFixed(6) + ', ' + lon.toFixed(6);
     const point: Place = { id: `pin:${field}:${++pinSequence.current}`, name: coordinate, address: coordinate, lat, lon, addressStatus: 'pending' };
@@ -62,7 +74,7 @@ export default function MapsPanel() {
   function dropPin(x: number, y: number, field: Field) {
     const point = map.current?.unprojectScreen(x, y); if (point) pinAt(point.lat, point.lon, field);
   }
-  function invalidate() { generation.current++; setRoad(null); setJourney(null); setResults([]); setError(''); }
+  function invalidate() { generation.current++; setRoad(null); setJourney(null); setResults([]); setError(''); setTourContext(null); }
   async function search(field: 'origin' | 'destination') {
     const query = (field === 'origin' ? originText : destinationText).trim(); if (query.length < 2) { setError('Nhập tên địa điểm hoặc địa chỉ để tìm.'); return; }
     const coordinate = query.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
@@ -99,26 +111,27 @@ export default function MapsPanel() {
     const id = ++sequence.current;
     return new Promise<Journey | null>((resolve, reject) => { const timer = setTimeout(() => { pending.current.delete(id); reject(new Error('Tìm tuyến quá lâu. Vui lòng thử lại.')); }, 20000); pending.current.set(id, { resolve, reject, timer }); worker.current!.postMessage({ id, origin: from, destination: to, options }); });
   }
-  async function plan(nextMode = mode) {
-    if (!origin) { await search('origin'); return; } if (!destination) { await search('destination'); return; }
-    if (distance(origin, destination) < 20) { setError('Hai điểm quá gần nhau. Hãy chọn lại nơi đến.'); return; }
+  async function plan(nextMode = mode, endpoints?: { origin: Place; destination: Place }) {
+    const from = endpoints?.origin || origin, to = endpoints?.destination || destination;
+    if (!from) { await search('origin'); return; } if (!to) { await search('destination'); return; }
+    if (distance(from, to) < 20) { setError('Hai điểm quá gần nhau. Hãy chọn lại nơi đến.'); return; }
     setBusy(true); setError(''); setRoad(null); setJourney(null); setExpanded(false); const current = ++generation.current;
     try {
       if (nextMode !== 'transit') {
-        setProgress('Đang tìm đường ngắn nhất…'); const data = await rpc<{ route: RoadRoute }>('maps.route', { origin, destination, mode: nextMode });
+        setProgress('Đang tìm đường ngắn nhất…'); const data = await rpc<{ route: RoadRoute }>('maps.route', { origin: from, destination: to, mode: nextMode });
         if (current === generation.current && mounted.current) setRoad(data.route);
       } else {
         const active = () => { if (!mounted.current || current !== generation.current) throw new Error('Đã đóng bản đồ.'); };
         const result = await verifyJourney(async options => {
-          active(); setProgress('Đang tìm tuyến và trạm chuyển…'); return transitPlan(origin, destination, options);
+          active(); setProgress('Đang tìm tuyến và trạm chuyển…'); return transitPlan(from, to, options);
         }, async (from, to) => {
           active(); return (await rpc<{ route: RoadRoute }>('maps.route', { origin: from, destination: to, mode: 'walk' })).route;
-        }, origin, destination, (i, count) => setProgress(`Đang kiểm tra đường đi bộ ${i}/${count}…`));
+        }, from, to, (i, count) => setProgress(`Đang kiểm tra đường đi bộ ${i}/${count}…`));
         if (current === generation.current && mounted.current) { setJourney(result); setExpanded(true); }
       }
       if (mounted.current && current === generation.current) setCollapsed(true);
     } catch (error) { if (mounted.current && current === generation.current) setError((error as Error).message); }
-    finally { if (mounted.current) setBusy(false); }
+    finally { if (mounted.current && current === generation.current) setBusy(false); }
   }
   const hasRoute = !!road || !!journey;
   const transitLook = journey ? journeyPresentation(journey) : null;
@@ -129,6 +142,7 @@ export default function MapsPanel() {
     {drag&&<div className={`drag-pin ${drag.field}`} style={{left:drag.x,top:drag.y}} aria-hidden="true">{drag.field==='origin'?'A':'B'}</div>}
     {pickField&&<div className="pin-prompt" role="status"><span>{t(pickField==='origin'?'pickOrigin':'pickDestination')}</span><button onClick={()=>setPickField(null)}>{t('cancel')}</button></div>}
     <section className="map-search-sheet" aria-label={t('directions')}><h1>{t('whereNext')}</h1>
+      {tourContext && <p className="tour-map-context">{tourText(locale, tourContext)}</p>}
       {collapsed && hasRoute ? <div className="collapsed-route"><p><strong>{origin?.name}</strong><br/>{destination?.name}</p><button onClick={() => setCollapsed(false)}>{t('edit')}</button></div> : <>
         <div className="route-fields">
           <div className="place-input-row"><PinButton {...pinProps('origin')}/><label className="sr-only" htmlFor="map-origin">{t('origin')}</label><input id="map-origin" autoComplete="off" value={originText} placeholder={t('originPlaceholder')} disabled={busy} onKeyDown={event=>{if(event.key==='Enter'&&!event.nativeEvent.isComposing){event.preventDefault();void search('origin');}}} onChange={event=>{invalidate();setOrigin(null);setOriginText(event.target.value);}}/><button className="icon-button" aria-label={t('searchOrigin')} disabled={busy} onClick={()=>void search('origin')}><Icon name="search" size={18}/></button></div>

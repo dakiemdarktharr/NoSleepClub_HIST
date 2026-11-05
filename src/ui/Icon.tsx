@@ -1,6 +1,7 @@
-export type IconName = 'camera' | 'record' | 'qr' | 'back' | 'close' | 'menu' | 'map' | 'walk' | 'bike' | 'transit' | 'search' | 'locate' | 'swap' | 'chevron' | 'check';
+export type IconName = 'camera' | 'record' | 'qr' | 'back' | 'close' | 'menu' | 'map' | 'walk' | 'bike' | 'transit' | 'search' | 'locate' | 'swap' | 'chevron' | 'check' | 'book';
 export default function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, React.ReactNode> = {
+    book: <><path d="M12 5C9 3 5 3 2 4v15c3-1 7-1 10 1 3-2 7-2 10-1V4c-3-1-7-1-10 1zm0 0v15"/></>,
     camera: <><path d="M3 7h4l2-3h6l2 3h4v13H3z"/><circle cx="12" cy="13" r="4"/></>,
     record: <><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="4"/></>,
     qr: <><path d="M3 3h6v6H3zm12 0h6v6h-6zM3 15h6v6H3zm12 0h3v3h3v3h-6zM12 3v9H3m9 9v-6h9M18 12h3"/></>,

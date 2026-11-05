@@ -29,7 +29,7 @@ async function authorize(db: Db, payload: Record<string, unknown>, write = false
   return workspace;
 }
 function publicFootage(item: Document) {
-  return { id: item.footageId, label: item.label, background: item.background, kind: item.kind,
+  return { id: item.footageId, label: item.label, ...(item.siteId ? { siteId: item.siteId } : {}), background: item.background, kind: item.kind,
     status: item.status, frameCount: item.frameCount, duration: item.duration, size: item.size,
     chunks: item.chunks, mime: item.mime, cover: item.cover, createdAt: item.createdAt };
 }

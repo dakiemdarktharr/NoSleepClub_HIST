@@ -23,7 +23,7 @@ export async function loadCatalog(room: Room, footages: Footage[]) {
   return frames;
 }
 function toBase64(buffer: ArrayBuffer) { let text = ''; for (const byte of new Uint8Array(buffer)) text += String.fromCharCode(byte); return btoa(text); }
-export async function saveFootage(room: Room, video: Blob, frames: Feature[], metadata: { label: string; background: boolean; kind: 'reference' | 'validation'; duration: number; cover: string }, progress: (value: string) => void) {
+export async function saveFootage(room: Room, video: Blob, frames: Feature[], metadata: { label: string; siteId?: string; background: boolean; kind: 'reference' | 'validation'; duration: number; cover: string }, progress: (value: string) => void) {
   const chunks = Math.ceil(video.size / CHUNK_SIZE);
   const created = await rpc<{ id: string }>('footage.create', { data: { ...metadata, model: MODEL, size: video.size, chunks, frameCount: frames.length, mime: video.type.startsWith('video/mp4') ? 'video/mp4' : 'video/webm' } }, room, true);
   try {

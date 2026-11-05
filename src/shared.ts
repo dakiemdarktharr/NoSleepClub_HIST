@@ -11,7 +11,7 @@ export interface Feature {
   width: number; height: number; sharpness: number; brightness: number;
 }
 export interface Footage {
-  id: string; label: string; background: boolean; kind: 'reference' | 'validation';
+  id: string; label: string; siteId?: string; background: boolean; kind: 'reference' | 'validation';
   status: 'pending' | 'ready'; frameCount: number; duration: number; size: number;
   chunks: number; mime: string; cover: string; createdAt: string;
 }

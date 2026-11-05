@@ -1,6 +1,8 @@
 # Nếp Phố
 
-A mobile web proof of concept with two features:
+A mobile web prototype with a published self-guided walk and a private recognition workbench:
+
+* **Published walk:** Central Post Office → Notre Dame Cathedral (exterior) → Independence Palace (exterior). New visitors can read sourced English/Vietnamese guidance, listen with a compatible device voice, pause/resume, open a walking leg, identify a published facade and finish with an honest summary. Camera and location are optional.
 
 * **Place recognition:** Dev records and names a five-second clip. User points a camera at that place; the app displays its name when visual evidence is sufficient, or `...` when it is not.
 * **Ho Chi Minh City maps:** users choose two points and request walking, motorbike or bus/metro directions inside the app.
@@ -9,16 +11,38 @@ The UI brand is **Nếp Phố**. The existing GitHub repository, Vercel URL, roo
 
 [Open the HTTPS app](https://nosleepclub-hist-connected.vercel.app/) · [App QR](docs/qr-app.png) · [UI audit](docs/audit-localization.md) · [Translation review](docs/translation-review.md)
 
+[Open the published walk directly](https://nosleepclub-hist-connected.vercel.app/?tour=central-architecture-v1) · [Public walk QR](docs/qr-walk.png) · [Walk architecture and acceptance audit](docs/audit-published-walk.md)
+
 ![QR code that opens the app, without granting room access](docs/qr-app.png)
 
-## Try the recognition flow
+## Published walk architecture
+
+`Explore` opens the public walk; `Dev` retains the five-second private capture workflow. A `?tour=central-architecture-v1` link opens the walk after language selection, without creating a room, requesting device permissions or loading private-room references. The six-language interface remains available; guide content is explicitly published in English and Vietnamese. The two language choices are independent.
+
+The immutable stop catalogue in `src/tour/content.ts` is the shared identity boundary for guide content, camera labels and exterior map waypoints. Each entry has a stable `siteId`, editorial text, observation/access notes, primary-source links, review date and credited reference photo. Waypoints intentionally differ from 3D building centres. The walk is an exterior itinerary, not a ticket, booking, promise of entry or surveyed accessible route. Allow 45–60 minutes as an editorial planning estimate; road distance/time comes from the routing provider when requested.
+
+`tourReducer` controls overview, active, paused and complete states. `open` changes the selected content without marking it complete; only an explicit **Finish this stop** action adds a completion. An early finish retains the exact subset completed. `localStorage` stores only this device's progress and content-language choice. Invalid/version-mismatched state resets safely; blocked storage falls back to the current session. No location, image, room capability or assertion of a physical visit enters the tour progress object.
+
+`ReadAloud` uses `speechSynthesis` after an explicit tap, chooses a voice matching the guide language, queues short utterances and cancels on a stop/language/view change or page backgrounding. Devices without a suitable voice retain the full text and show an explanation. Voice availability, pronunciation, background playback and offline synthesis depend on the browser/OS; no pre-recorded narrator is claimed.
+
+Camera uses a separately published, pre-fitted DINOv2/ORB artifact at `/guide/reference-model-v1.json`. Its nine supports come from three historical licensed photographs with nested crops. A strong geometric match maps `tour:<siteId>` to that stop's **Read this place** action. This does not change progress until the visitor explicitly completes a stop. Unknown frames keep `...`; selecting a stop by hand remains available. This is a small experimental visual reference set, not proof of independent field accuracy or coverage of every viewing angle. See [photo licences and model provenance](public/guide/README.md) and [the generation receipt](docs/public-recognition-build.json).
+
+Private clips can optionally carry `siteId` (`post-office`, `cathedral`, `palace`). The server validates and returns this metadata; existing clips remain compatible. Room predictions open guide content only when all ready reference clips with that exact normalized label share one explicit binding. Missing/conflicting bindings, backgrounds and validation clips never infer a site. Private room models and public references are selected separately, never merged or published automatically. A walk QR contains only the public tour URL; a room QR retains its existing read capability.
+
+`MapsPanel.tourRequest` carries the selected exterior destination and, for later stops, the previous stop as a planned origin. The first stop leaves origin empty for manual entry or **My location**; no GPS permission is requested automatically. The map labels later legs as planned from the previous stop rather than the visitor's live location. Requests invalidate stale routes and pass explicit endpoint objects to the road API, avoiding React state-update races. The existing bus/metro, pins and 3D layers remain available.
+
+Production builds generate `/offline-guide.js`. It pre-caches the public shell, English/Vietnamese font files, ornaments and three guide photos; fetched public JS/CSS/font assets have a separate bounded runtime cache. Root navigations prefer the network and fall back to the saved shell. API responses, room media/credentials, external map tiles/routes and vision weights are not stored by this worker. A first online load and successful service-worker installation are required. New map loading is guarded when offline; the saved text/photo guide and local progress remain usable. Clearing browser data removes this cache and progress. There is no claim of offline routing or guaranteed offline speech/camera initialization.
+
+Browser acceptance scripts use an optional Playwright installation: `node scripts/audit-tour.mjs` (Vite), `node scripts/audit-tour-camera.mjs` (real vision with synthetic photo streams), and `node scripts/audit-tour-offline.mjs` (build + preview at port 4173). Set `AUDIT_URL` to change the target; `PLAYWRIGHT_MODULE` and `CHROMIUM_EXECUTABLE` can point to existing installations. The first script uses deterministic road/speech/permission fixtures and checks six locales at four viewports. It does not measure field accuracy. Regenerate the public classifier against Vite with `node scripts/build-tour-references.mjs`; no private room is needed.
+
+## Try the private recognition flow
 
 1. Choose a language, then **Dev**. The browser creates a room if it does not already have a writable one.
 2. Start the camera and record five seconds of one area. Give the clip a place name and choose **Save & train**.
 3. Wait for training to finish. Open **Library → Room QR** on the Dev device.
-4. Scan that room QR on another phone, choose **User**, and start the camera. Both devices now use the same reference set.
+4. Scan that room QR on another phone, choose **Explore**, select **Camera**, and start it. The room's reference set remains selected for room links. You can switch between published and private reference sets in Library.
 
-The QR above opens the app only. A **room QR** additionally grants access to that room's recordings and recognition references. User and Dev are test modes; they are not account logins. In Vietnamese, these modes are labelled **Người dùng** and **Nhà phát triển**.
+The QR above opens the app only. A **room QR** additionally grants access to that room's recordings and recognition references. The visitor entry is labelled **Explore / Khám phá**, while **Dev / Nhà phát triển** opens the private workbench. These are workflows, not account logins. Public walk QR links grant no private-room access.
 
 Dev entry and recording do not wait for MongoDB. A writable room is created only when saving/training or sharing a Dev QR; a room/storage error leaves the recorded draft available to retry or download. Existing-room refresh runs in the background. RPC calls abort after 25 seconds rather than holding controls indefinitely. In browsers that block persistent storage, the current session can continue but room credentials will not survive a reload.
 

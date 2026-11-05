@@ -17,12 +17,12 @@ const Context = createContext<{
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, update] = useState<Locale>(remembered);
   // Register native font faces for the language chooser too; unicode ranges load only needed glyphs.
-  useEffect(() => { void Promise.allSettled(Object.values(fontLoads).map(load => load())); }, []);
+  useEffect(() => { if (navigator.onLine) void Promise.allSettled(Object.values(fontLoads).map(load => load())); }, []);
   useEffect(() => {
     document.documentElement.lang = languageNames[locale].intl;
     document.documentElement.dataset.locale = locale;
     document.title = `${BRAND} · ${translate('city', locale)}`;
-    void fontLoads[locale]();
+    void fontLoads[locale]().catch(() => { /* Native system serif remains available when an optional font chunk is offline. */ });
   }, [locale]);
   const setLocale = (value: Locale) => { update(value); try { localStorage.setItem('hist-locale-v1', value); } catch { /* Private browsing remains usable. */ } };
   return <Context.Provider value={{ locale, setLocale, t: (key, params) => translate(key, locale, params), m: text => localizeMessage(text, locale) }}>{children}</Context.Provider>;
